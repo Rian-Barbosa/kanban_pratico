@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kanban</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="brand" title="Clique para alterar o nome do app">
+        <div class="brand-title-wrap" onclick="promptChangeAppName()">
+          <span id="app-brand-name">📋 Kanban</span>
+        </div>
+        <button class="card-action-btn brand-edit-btn" onclick="promptChangeAppName()" title="Alterar Nome do App">✏️</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="sidebar-section-title">Projetos</span>
+        <button class="btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="openNewProjectPrompt()">+ Novo</button>
+      </div>
+
+      <ul class="project-list" id="project-list">
+        <!-- Renderizado dinamicamente -->
+      </ul>
+
+      <div style="margin: 12px 0 6px; display: flex; flex-direction: column; gap: 6px;">
+        <button class="btn" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 0.85rem;" onclick="openCollaboratorsModal()">
+          👥 Colaboradores
+        </button>
+        <a href="/markdown-guide.html" class="btn" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 0.85rem; text-decoration: none;">
+          📖 Guia Markdown
+        </a>
+      </div>
+
+      <div style="margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-light); font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center;">
+        <span id="user-display" style="color: var(--text-muted); font-weight: 500;">admin</span>
+        <button class="btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="handleLogout()">Sair</button>
+      </div>
+    </aside>
+
+    <!-- Área Principal -->
+    <main id="main-content">
+      <header class="board-header">
+        <div id="project-header-info" style="display: none; align-items: center; gap: 12px;">
+          <h1 class="board-title" id="current-project-title"></h1>
+          <button class="card-action-btn" id="rename-project-btn" title="Renomear Projeto" onclick="promptRenameCurrentProject()">✏️</button>
+          <button class="card-action-btn delete" id="delete-project-btn" title="Excluir Projeto" onclick="confirmDeleteCurrentProject()">🗑️</button>
+        </div>
+        <div class="board-actions" id="project-header-actions" style="display: none;">
+          <button class="btn" onclick="openNewColumnModal()">+ Nova Lista</button>
+        </div>
+      </header>
+
+      <div class="kanban-board" id="kanban-board">
+        <!-- Colunas e cards renderizados via JavaScript -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal de Login -->
+  <div class="modal-overlay" id="login-modal" style="display: none;">
+    <div class="modal-content">
+      <h2 style="margin-bottom: 8px; font-size: 1.25rem;">🔐 Acesso ao Kanban</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px;">
+        Entre com suas credenciais para continuar.
+      </p>
+      
+      <div id="login-error" style="display: none; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px;"></div>
+
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Usuário</label>
+          <input type="text" id="login-username" class="form-control" placeholder="admin" required />
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="password" id="login-password" class="form-control" placeholder="••••••••" required />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+          <button type="submit" class="btn btn-primary">Entrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal de Novo / Editar Card -->
+  <div class="modal-overlay" id="card-modal" style="display: none;">
+    <div class="modal-content">
+      <h3 id="card-modal-title" style="margin-bottom: 12px; font-size: 1.1rem;">Novo Item</h3>
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label style="margin-bottom: 0;">Conteúdo</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="editor-view-toggle">
+              <button type="button" class="view-toggle-btn active" id="btn-mode-live" onclick="switchEditorMode('live')" title="Modo Visual (Edição rica em tempo real estilo Obsidian)">✨ Visual</button>
+              <button type="button" class="view-toggle-btn" id="btn-mode-raw" onclick="switchEditorMode('raw')" title="Modo Texto Puro (Código Markdown)">📄 Texto Puro</button>
+            </div>
+            <button type="button" class="btn btn-sm" onclick="openCommandPalette()" title="Comandos e Atalhos (Ctrl+/)" style="font-size: 0.75rem; padding: 2px 8px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;">⚡ Comandos (Ctrl+/)</button>
+            <a href="/markdown-guide.html" target="_blank" style="font-size: 0.75rem; color: #2563eb; text-decoration: underline;">📖 Guia</a>
+          </div>
+        </div>
+        
+        <!-- Editor com Suporte a Visual e Texto Puro -->
+        <div id="card-editor-wrapper" class="editor-mode-live">
+          <!-- Modo Visual: Área interativa real que renderiza as tags (como no Obsidian) -->
+          <div id="card-content-visual" class="editor-visual-block" contenteditable="true" spellcheck="true" placeholder="Escreva em Markdown... (ex: digite '- [ ] ' ou use Alt+L para checklist)"></div>
+          
+          <!-- Modo Texto Puro: Textarea tradicional com as tags em código puro -->
+          <textarea id="card-content-input" class="form-control editor-textarea" rows="6" placeholder="Escreva em Markdown puro... Suporta checklists (- [ ]), ==destaque==, tags (#tag), atalhos e Ctrl+V para colar imagens"></textarea>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Responsáveis (Clique para selecionar um ou mais)</label>
+        <div id="card-assignees-container" class="assignees-checkbox-container">
+          <!-- Chips de responsáveis gerados dinamicamente -->
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group">
+          <label>Urgência</label>
+          <select id="card-urgency-select" class="form-control">
+            <option value="">Sem urgência</option>
+            <option value="alta">🔺 Alta</option>
+            <option value="media">⏳ Média</option>
+            <option value="baixa">🌱 Baixa</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Prazo</label>
+          <input type="date" id="card-date-input" class="form-control" />
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button type="button" class="btn" onclick="closeCardModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="save-card-btn" onclick="saveCardAction()">Salvar Item</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Colaboradores -->
+  <div class="modal-overlay" id="collaborators-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 520px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="font-size: 1.15rem;">👥 Equipe & Colaboradores</h3>
+        <button class="btn" style="padding: 2px 8px; font-size: 0.8rem;" onclick="closeCollaboratorsModal()">✕</button>
+      </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+        Cadastre membros para atribuir tarefas nos quadros.
+      </p>
+
+      <!-- Formulário de cadastro rápido -->
+      <form onsubmit="handleCreateCollaborator(event)" style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 8px; margin-bottom: 18px;">
+        <input type="text" id="new-collab-name" class="form-control" placeholder="Nome da pessoa" required />
+        <input type="text" id="new-collab-role" class="form-control" placeholder="Cargo/Função" />
+        <button type="submit" class="btn btn-primary">+ Adicionar</button>
+      </form>
+
+      <!-- Lista de colaboradores -->
+      <div id="collaborators-list" style="max-height: 240px; overflow-y: auto;">
+        <!-- Inserido dinamicamente -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Criação / Edição de Projeto -->
+  <div class="modal-overlay" id="project-input-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 420px;">
+      <h3 id="project-input-modal-title" style="margin-bottom: 12px; font-size: 1.15rem;">Novo Projeto</h3>
+      <div class="form-group">
+        <label id="project-input-label">Nome do Projeto</label>
+        <input type="text" id="project-name-input" class="form-control" placeholder="Ex: Roadmap 2026, Finanças..." required />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+        <button type="button" class="btn" onclick="closeProjectInputModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="save-project-input-btn" onclick="saveProjectInputAction()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Genérico de Confirmação (Substitui confirm padrão) -->
+  <div class="modal-overlay" id="generic-confirm-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 420px;">
+      <h3 id="generic-confirm-title" style="margin-bottom: 8px; font-size: 1.15rem; color: #991b1b;">⚠️ Confirmação</h3>
+      <p id="generic-confirm-msg" style="font-size: 0.88rem; color: var(--text-main); margin-bottom: 20px;"></p>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn" onclick="closeGenericConfirmModal(false)">Cancelar</button>
+        <button type="button" class="btn btn-primary" style="background: #dc2626; border-color: #b91c1c;" onclick="closeGenericConfirmModal(true)">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmação de Exclusão de Projeto -->
+  <div class="modal-overlay" id="confirm-delete-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 420px;">
+      <h3 style="margin-bottom: 8px; font-size: 1.15rem; color: #991b1b;">⚠️ Excluir Projeto</h3>
+      <p style="font-size: 0.88rem; color: var(--text-main); margin-bottom: 12px;">
+        Tem certeza que deseja excluir o projeto <strong id="delete-project-name"></strong>?
+      </p>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 20px;">
+        Esta ação apagará permanentemente todos os dados e notas associados a este projeto.
+      </p>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn" onclick="closeConfirmDeleteModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" style="background: #dc2626; border-color: #b91c1c;" onclick="executeDeleteCurrentProject()">Excluir Definitivamente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Criação / Edição de Coluna (Lista) -->
+  <div class="modal-overlay" id="column-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 420px;">
+      <h3 id="column-modal-title" style="margin-bottom: 12px; font-size: 1.15rem;">Nova Lista</h3>
+      <div class="form-group">
+        <label>Nome da Lista</label>
+        <input type="text" id="column-title-input" class="form-control" placeholder="Ex: Em Revisão, Ideias..." required />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+        <button type="button" class="btn" onclick="closeColumnModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="save-column-btn" onclick="saveColumnAction()">Salvar Lista</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visualizador de Imagens (Lightbox) -->
+  <div class="lightbox-overlay" id="image-lightbox" style="display: none;" onclick="closeLightbox(event)">
+    <div class="lightbox-img-wrapper">
+      <button class="lightbox-close-btn" onclick="closeLightbox(event)" title="Fechar (Esc)">✕</button>
+      <img id="lightbox-target-img" class="lightbox-img" src="" alt="Imagem ampliada" />
+    </div>
+  </div>
+
+  <!-- Modal da Paleta de Comandos Rápidos (Command Palette) -->
+  <div class="modal-overlay" id="command-palette-modal" style="display: none;" onclick="handlePaletteBackdropClick(event)">
+    <div class="modal-content command-palette-content">
+      <div class="palette-header">
+        <input type="text" id="palette-search-input" class="palette-input" placeholder="Pesquisar comando ou tag... (ex: che, checklist, negrito, link)" autocomplete="off" oninput="filterPaletteCommands()" />
+        <button class="btn btn-sm" onclick="openHotkeysSettingsModal()" title="Personalizar Teclas de Atalho" style="font-size: 0.75rem; padding: 4px 10px; border: 1px solid var(--border-active); white-space: nowrap;">⚙️ Atalhos</button>
+        <button class="btn btn-sm" onclick="closeCommandPalette()" style="font-size: 0.75rem; padding: 4px 8px;">✕</button>
+      </div>
+      <div id="palette-commands-list" class="palette-list">
+        <!-- Renderizado dinamicamente -->
+      </div>
+      <div class="palette-footer">
+        <span>Use <strong>Enter</strong> ou <strong>Clique</strong> para inserir no texto</span>
+        <span>Atalho rápido: <kbd>Ctrl</kbd> + <kbd>/</kbd></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Configuração / Edição de Atalhos de Teclado -->
+  <div class="modal-overlay" id="hotkeys-settings-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 540px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem;">⌨️ Atalhos de Teclado</h3>
+        <button class="btn btn-sm" onclick="closeHotkeysSettingsModal()">✕</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+        Personalize as combinações de teclas para inserir marcações Markdown rapidamente no editor.
+      </p>
+      <div id="hotkeys-settings-list" style="max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+        <!-- Lista de atalhos editáveis -->
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-sm" onclick="resetDefaultHotkeys()" style="font-size: 0.8rem; color: #dc2626;">Restaurar Padrão</button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-sm" onclick="closeHotkeysSettingsModal()">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
+

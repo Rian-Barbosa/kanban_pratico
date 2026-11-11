@@ -1,0 +1,47 @@
+# Bloqueia absolutamente TODOS os arquivos Markdown (.md) em qualquer diretório
+*.md
+**/*.md
+
+# Dependências locais
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Variáveis de ambiente e segredos locais
+.env
+.env.*
+!.env.example
+caddy.txt
+
+# Certificados e arquivos temporários locais
+*.pem
+*.crt
+*.tmp
+
+# Dados sensíveis, credenciais e banco de dados
+data/users.json
+data/collaborators.json
+data/settings.json
+data/session.key
+data/*.key
+data/*.json
+data/*.sqlite*
+data/*.db*
+
+# Notas e imagens anexadas (mantém apenas as pastas vazias via .gitkeep)
+data/vaults/*
+!data/vaults/.gitkeep
+data/attachments/*
+!data/attachments/.gitkeep
+
+# IDEs, caches e arquivos de sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+.gemini/
+.system_generated/
+.claude/
+.cursor/

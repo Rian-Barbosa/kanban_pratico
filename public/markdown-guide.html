@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guia de Sintaxe Markdown</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    html, body {
+      height: 100%;
+    }
+    body {
+      min-height: 100vh;
+      overflow-y: auto !important;
+      background-color: #fbfbfa;
+      padding: 40px 20px 80px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      margin: 0;
+    }
+
+    .doc-container {
+      max-width: 860px;
+      width: 100%;
+      height: auto;
+      background: #ffffff;
+      padding: 40px 48px 60px;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(15, 15, 15, 0.05), 0 0 0 1px rgba(15, 15, 15, 0.05);
+      margin-bottom: 40px;
+      overflow: visible;
+    }
+
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .doc-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .doc-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 28px;
+      font-size: 0.9rem;
+    }
+
+    .doc-table th, .doc-table td {
+      border: 1px solid var(--border-light);
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    .doc-table th {
+      background: #f7f6f3;
+      font-weight: 600;
+    }
+
+    .syntax-code {
+      font-family: monospace;
+      background: #f1f1ef;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #eb5757;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 24px 0 8px;
+      color: var(--text-main);
+    }
+  </style>
+</head>
+<body>
+  <div class="doc-container">
+    <div class="doc-header">
+      <div>
+        <h1 class="doc-title">📖 Dicionário Markdown</h1>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+          Sintaxes de formatação rápida suportadas nos cards e listas do Kanban.
+        </p>
+      </div>
+      <a href="/" class="btn btn-primary" style="text-decoration: none;">← Voltar ao Quadro</a>
+    </div>
+
+    <h2 class="section-title">1. Formatação de Texto Básica</h2>
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Elemento</th>
+          <th>Como Escrever (Sintaxe)</th>
+          <th>Atalho Seguro</th>
+          <th>Resultado Renderizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Negrito</td>
+          <td><span class="syntax-code">**texto**</span></td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">B</kbd></td>
+          <td><strong>texto</strong></td>
+        </tr>
+        <tr>
+          <td>Itálico</td>
+          <td><span class="syntax-code">*texto*</span></td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">I</kbd></td>
+          <td><em>texto</em></td>
+        </tr>
+        <tr>
+          <td>Tachado / Riscado</td>
+          <td><span class="syntax-code">~~texto~~</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">X</kbd></td>
+          <td><del class="md-strikethrough">texto</del></td>
+        </tr>
+        <tr>
+          <td>Destaque (Marca-texto)</td>
+          <td><span class="syntax-code">==texto destacado==</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">H</kbd></td>
+          <td><mark class="md-highlight">texto destacado</mark></td>
+        </tr>
+        <tr>
+          <td>Código Inline</td>
+          <td><span class="syntax-code">`const a = 1;`</span></td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">Shift</kbd> + <kbd class="hotkey-kbd">C</kbd></td>
+          <td><code class="md-inline-code">const a = 1;</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="section-title">2. Listas e Checklists (Tarefas)</h2>
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Elemento</th>
+          <th>Como Escrever (Sintaxe)</th>
+          <th>Atalho Seguro</th>
+          <th>Resultado Renderizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Item a Fazer</td>
+          <td><span class="syntax-code">- [ ] Comprar café</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">L</kbd> ou <kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">Enter</kbd></td>
+          <td><div class="md-task-item"><input type="checkbox" disabled class="md-task-checkbox" /> <span>Comprar café</span></div></td>
+        </tr>
+        <tr>
+          <td>Item Concluído</td>
+          <td><span class="syntax-code">- [x] Ajustar deploy</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">L</kbd></td>
+          <td><div class="md-task-item completed"><input type="checkbox" checked disabled class="md-task-checkbox" /> <span class="md-task-done">Ajustar deploy</span></div></td>
+        </tr>
+        <tr>
+          <td>Lista com Marcadores</td>
+          <td><span class="syntax-code">- Item de lista</span></td>
+          <td>-</td>
+          <td><div class="md-list-item">• Item de lista</div></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 class="section-title">3. Recursos Avançados</h2>
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Elemento</th>
+          <th>Como Escrever (Sintaxe)</th>
+          <th>Atalho Seguro</th>
+          <th>Resultado Renderizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tags Inline</td>
+          <td><span class="syntax-code">#urgente #roadmap</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">T</kbd></td>
+          <td><span class="md-tag">#urgente</span> <span class="md-tag">#roadmap</span></td>
+        </tr>
+        <tr>
+          <td>Wikilink (Link de Projeto)</td>
+          <td><span class="syntax-code">[[Anotações]]</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">W</kbd></td>
+          <td><span class="md-wikilink">📄 Anotações</span></td>
+        </tr>
+        <tr>
+          <td>Link Externo</td>
+          <td><span class="syntax-code">[Google](https://google.com)</span></td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">K</kbd></td>
+          <td><a href="#" style="color: #2563eb; text-decoration: underline;">Google</a></td>
+        </tr>
+        <tr>
+          <td>Comandos Gerais</td>
+          <td>Paleta de busca rápida</td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">/</kbd> ou <kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">K</kbd></td>
+          <td>Abre a paleta de comandos</td>
+        </tr>
+        <tr>
+          <td>Imagens / Anexos</td>
+          <td><span class="syntax-code">![[foto.png]]</span> ou <span class="syntax-code">![[foto.png|200]]</span></td>
+          <td><kbd class="hotkey-kbd">Ctrl</kbd> + <kbd class="hotkey-kbd">V</kbd> (Colar)</td>
+          <td>Exibe a imagem com lightbox interativo ao clicar</td>
+        </tr>
+        <tr>
+          <td>Callout de Informação</td>
+          <td><span class="syntax-code">&gt; [!info] Dica</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">I</kbd></td>
+          <td>
+            <div class="md-callout callout-info" style="margin: 0;">
+              <div class="md-callout-title">ℹ️ Informação</div>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>Callout de Alerta</td>
+          <td><span class="syntax-code">&gt; [!warning] Cuidado</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">A</kbd></td>
+          <td>
+            <div class="md-callout callout-warning" style="margin: 0;">
+              <div class="md-callout-title">💡 Cuidado</div>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>Comentário Oculto</td>
+          <td><span class="syntax-code">%% apenas no editor %%</span></td>
+          <td>-</td>
+          <td><em>(Oculto no quadro, visível apenas na edição)</em></td>
+        </tr>
+        <tr>
+          <td>Linha Divisória</td>
+          <td><span class="syntax-code">---</span></td>
+          <td><kbd class="hotkey-kbd">Alt</kbd> + <kbd class="hotkey-kbd">D</kbd></td>
+          <td><hr class="md-hr" style="margin: 4px 0;" /></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="text-align: center; margin-top: 32px;">
+      <a href="/" class="btn btn-primary" style="text-decoration: none; padding: 8px 18px;">Voltar ao Kanban</a>
+    </div>
+  </div>
+</body>
+</html>
+

@@ -1,0 +1,22 @@
+{
+  "name": "kanban-vps",
+  "version": "1.0.0",
+  "description": "Kanban ultra-leve para VPS com armazenamento nativo em Markdown",
+  "main": "server/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "change-password": "node server/change-password.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/multipart": "^9.4.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/session": "^11.1.6",
+    "@fastify/static": "^10.1.10",
+    "argon2": "^0.40.1",
+    "fastify": "^5.12.8",
+    "gray-matter": "^4.0.3"
+  }
+}

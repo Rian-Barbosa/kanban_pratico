@@ -978,6 +978,7 @@ header.board-header {
   color: var(--text-main);
   white-space: pre-wrap;
   word-wrap: break-word;
+  tab-size: 4;
 }
 
 .editor-visual-block {
@@ -991,7 +992,9 @@ header.board-header {
   padding: 10px 14px;
   outline: none;
   cursor: text;
+  white-space: pre-wrap;
   word-wrap: break-word;
+  tab-size: 4;
   color: var(--text-main);
 }
 

@@ -503,9 +503,9 @@ window.handleTaskToggle = async function (e, checkboxEl) {
 
   if (lines[lineIdx] !== undefined) {
     if (checkboxEl.checked) {
-      lines[lineIdx] = lines[lineIdx].replace(/^(-\s*\[)\s*(\])/, '$1x$2');
+      lines[lineIdx] = lines[lineIdx].replace(/^([\t ]*-\s*\[)\s*(\])/, '$1x$2');
     } else {
-      lines[lineIdx] = lines[lineIdx].replace(/^(-\s*\[)[xX](\])/, '$1 $2');
+      lines[lineIdx] = lines[lineIdx].replace(/^([\t ]*-\s*\[)[xX](\])/, '$1 $2');
     }
     card.content = lines.join('\n');
     await syncProject();
@@ -916,6 +916,33 @@ function renderInlineVisualHtml(rawLine) {
   return text;
 }
 
+function getLineIndentLevel(rawLine) {
+  const leading = (rawLine.match(/^[\t ]*/) || [''])[0];
+  let levels = 0;
+  let spaceRun = 0;
+  for (const ch of leading) {
+    if (ch === '\t') {
+      levels += 1 + Math.floor(spaceRun / 2);
+      spaceRun = 0;
+    } else {
+      spaceRun += 1;
+    }
+  }
+  levels += Math.floor(spaceRun / 2);
+  return Math.min(levels, 10);
+}
+
+function setVisualLineIndent(lineEl, indent) {
+  const clamped = Math.max(0, Math.min(indent, 10));
+  if (clamped > 0) {
+    lineEl.dataset.indent = String(clamped);
+    lineEl.style.marginLeft = `${clamped * 24}px`;
+  } else {
+    delete lineEl.dataset.indent;
+    lineEl.style.marginLeft = '';
+  }
+}
+
 // Converte texto Markdown completo em HTML interativo para o editor visual
 function renderVisualEditorHtml(markdownText) {
   if (!markdownText || !markdownText.trim()) return '';
@@ -949,20 +976,24 @@ function renderVisualEditorHtml(markdownText) {
       continue;
     }
 
-    // Checklist (- [ ] ou - [x])
-    if (/^-\s*\[ \]\s*(.*)$/.test(line)) {
-      const text = line.replace(/^-\s*\[ \]\s*/, '');
-      out.push(`<div class="visual-line md-task-item"><span class="visual-check-wrap" contenteditable="false"><input type="checkbox" class="md-task-checkbox" /></span><span class="visual-line-text">${renderInlineVisualHtml(text) || '\u200B'}</span></div>`);
+    const indent = getLineIndentLevel(line);
+    const indentAttr = indent > 0 ? ` data-indent="${indent}" style="margin-left: ${indent * 24}px;"` : '';
+    const trimmedStart = line.replace(/^[\t ]+/, '');
+
+    // Checklist (- [ ] ou - [x]) com suporte a indentação
+    if (/^-\s*\[ \]\s*(.*)$/.test(trimmedStart)) {
+      const text = trimmedStart.replace(/^-\s*\[ \]\s*/, '');
+      out.push(`<div class="visual-line md-task-item"${indentAttr}><span class="visual-check-wrap" contenteditable="false"><input type="checkbox" class="md-task-checkbox" /></span><span class="visual-line-text">${renderInlineVisualHtml(text) || '\u200B'}</span></div>`);
       continue;
     }
-    if (/^-\s*\[[xX]\]\s*(.*)$/.test(line)) {
-      const text = line.replace(/^-\s*\[[xX]\]\s*/, '');
-      out.push(`<div class="visual-line md-task-item completed"><span class="visual-check-wrap" contenteditable="false"><input type="checkbox" checked class="md-task-checkbox" /></span><span class="visual-line-text">${renderInlineVisualHtml(text) || '\u200B'}</span></div>`);
+    if (/^-\s*\[[xX]\]\s*(.*)$/.test(trimmedStart)) {
+      const text = trimmedStart.replace(/^-\s*\[[xX]\]\s*/, '');
+      out.push(`<div class="visual-line md-task-item completed"${indentAttr}><span class="visual-check-wrap" contenteditable="false"><input type="checkbox" checked class="md-task-checkbox" /></span><span class="visual-line-text">${renderInlineVisualHtml(text) || '\u200B'}</span></div>`);
       continue;
     }
 
     // Callout (> [!tipo] título)
-    const calloutMatch = line.match(/^>\s*\[!([a-zA-Z0-9_-]+)\]\s*(.*)$/);
+    const calloutMatch = trimmedStart.match(/^>\s*\[!([a-zA-Z0-9_-]+)\]\s*(.*)$/);
     if (calloutMatch) {
       const type = calloutMatch[1].toLowerCase();
       const title = calloutMatch[2] || '';
@@ -971,24 +1002,24 @@ function renderVisualEditorHtml(markdownText) {
     }
 
     // Blockquote (> texto)
-    if (/^>\s*(.*)$/.test(line)) {
-      const content = line.replace(/^>\s*/, '');
+    if (/^>\s*(.*)$/.test(trimmedStart)) {
+      const content = trimmedStart.replace(/^>\s*/, '');
       out.push(`<div class="visual-line md-blockquote"><span class="visual-line-text">${renderInlineVisualHtml(content) || '\u200B'}</span></div>`);
       continue;
     }
 
     // Cabeçalhos (# a ######)
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    const headingMatch = trimmedStart.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
       out.push(`<div class="visual-line md-visual-heading md-h${level}" data-heading-level="${level}">${renderInlineVisualHtml(headingMatch[2]) || '\u200B'}</div>`);
       continue;
     }
 
-    // Lista não-ordenada (- item ou * item)
-    if (/^[-*+]\s+(.*)$/.test(line)) {
-      const content = line.replace(/^[-*+]\s+/, '');
-      out.push(`<div class="visual-line md-list-item"><span class="visual-bullet" contenteditable="false">• </span><span class="visual-line-text">${renderInlineVisualHtml(content) || '\u200B'}</span></div>`);
+    // Lista não-ordenada (- item ou * item) com suporte a indentação
+    if (/^[-*+]\s+(.*)$/.test(trimmedStart)) {
+      const content = trimmedStart.replace(/^[-*+]\s+/, '');
+      out.push(`<div class="visual-line md-list-item"${indentAttr}><span class="visual-bullet" contenteditable="false">• </span><span class="visual-line-text">${renderInlineVisualHtml(content) || '\u200B'}</span></div>`);
       continue;
     }
 
@@ -1080,12 +1111,16 @@ function serializeVisualBlockElement(el) {
   }
   if (cl.contains('md-task-item')) {
     const isChecked = !!el.querySelector('input[type="checkbox"]')?.checked;
+    const indent = parseInt(el.dataset.indent || '0', 10) || 0;
+    const prefix = '\t'.repeat(Math.max(0, indent));
     const text = serializeVisualInlineNodes(el).trim();
-    return `- [${isChecked ? 'x' : ' '}] ${text}`;
+    return `${prefix}- [${isChecked ? 'x' : ' '}] ${text}`;
   }
   if (cl.contains('md-list-item')) {
+    const indent = parseInt(el.dataset.indent || '0', 10) || 0;
+    const prefix = '\t'.repeat(Math.max(0, indent));
     const text = serializeVisualInlineNodes(el).trim();
-    return `- ${text}`;
+    return `${prefix}- ${text}`;
   }
   if (cl.contains('md-callout')) {
     const type = el.dataset.calloutType || 'info';
@@ -1368,10 +1403,103 @@ function setupVisualEditorLiveKeys() {
     }
   });
 
+  // Suporte completo a Tab / Shift+Tab no modo Texto Puro (igual ao Obsidian)
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+
+    const value = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const rawLineEnd = value.indexOf('\n', end);
+    const lineEnd = rawLineEnd === -1 ? value.length : rawLineEnd;
+    const selectedSlice = value.substring(start, end);
+    const isMultiLine = selectedSlice.includes('\n');
+    const currentLine = value.substring(lineStart, lineEnd);
+    const isListOrTaskLine = /^[\t ]*(?:[-*+]\s+(?:\[[ xX]\]\s+)?)/.test(currentLine);
+
+    if (e.shiftKey || isMultiLine || isListOrTaskLine) {
+      const block = value.substring(lineStart, lineEnd);
+      const lines = block.split('\n');
+      let firstLineDelta = 0;
+      let totalDelta = 0;
+
+      const updated = lines.map((line, idx) => {
+        if (e.shiftKey) {
+          const match = line.match(/^(\t| {1,4})/);
+          if (match) {
+            const removed = match[1].length;
+            if (idx === 0) firstLineDelta = -removed;
+            totalDelta -= removed;
+            return line.substring(removed);
+          }
+          return line;
+        } else {
+          if (idx === 0) firstLineDelta = 1;
+          totalDelta += 1;
+          return '\t' + line;
+        }
+      }).join('\n');
+
+      textarea.value = value.substring(0, lineStart) + updated + value.substring(lineEnd);
+      textarea.selectionStart = Math.max(lineStart, start + firstLineDelta);
+      textarea.selectionEnd = Math.max(textarea.selectionStart, end + totalDelta);
+    } else {
+      textarea.value = value.substring(0, start) + '\t' + value.substring(end);
+      textarea.selectionStart = start + 1;
+      textarea.selectionEnd = start + 1;
+    }
+    saveEditorSelection();
+  });
+
   visual.addEventListener('keydown', (e) => {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
+
+    // 0. Tab / Shift+Tab no modo Visual: indentação real sem perder foco do editor
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const currentLineEl = ensureCurrentVisualLine(visual, range);
+      const linesInRange = Array.from(visual.querySelectorAll('.visual-line')).filter(l => range.intersectsNode(l));
+      const targetLines = linesInRange.length > 0 ? linesInRange : [currentLineEl];
+      const isListLine = (el) => el && (el.classList.contains('md-task-item') || el.classList.contains('md-list-item'));
+
+      // Se alguma linha alvo é lista/checklist ou há seleção múltipla ou Shift+Tab
+      if (e.shiftKey || targetLines.length > 1 || isListLine(currentLineEl)) {
+        targetLines.forEach(lineEl => {
+          if (isListLine(lineEl)) {
+            const cur = parseInt(lineEl.dataset.indent || '0', 10) || 0;
+            setVisualLineIndent(lineEl, e.shiftKey ? cur - 1 : cur + 1);
+          } else if (e.shiftKey) {
+            // Remove tab/espaços do início da linha normal
+            const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT, null);
+            const firstText = walker.nextNode();
+            if (firstText) {
+              const m = firstText.textContent.match(/^(\t| {1,4})/);
+              if (m) {
+                firstText.textContent = firstText.textContent.substring(m[1].length);
+              }
+            }
+          } else {
+            const tabNode = document.createTextNode('\t');
+            lineEl.insertBefore(tabNode, lineEl.firstChild);
+          }
+        });
+        textarea.value = visualEditorToMarkdown(visual);
+        saveEditorSelection();
+        return;
+      }
+
+      // Linha normal no modo visual: insere \t na posição do cursor
+      range.deleteContents();
+      const tabNode = document.createTextNode('\t');
+      range.insertNode(tabNode);
+      setCaretAt(tabNode, 1);
+      textarea.value = visualEditorToMarkdown(visual);
+      return;
+    }
 
     // 1. Espaço: converte prefixos de linha e #tags ou sai de tags fechadas
     if (e.key === ' ') {
@@ -1390,18 +1518,26 @@ function setupVisualEditorLiveKeys() {
       }
 
       if (textNode.nodeType === Node.TEXT_NODE && !textNode.parentElement?.closest('code, .md-code-block')) {
-        const beforeCursor = stripZws(textNode.textContent.substring(0, range.startOffset)).trimStart();
-        const isAtLineStart = !lineEl || !stripZws((lineEl.querySelector('.visual-line-text') || lineEl).textContent).startsWith(beforeCursor)
-          ? beforeCursor === stripZws(textNode.textContent.substring(0, range.startOffset))
-          : true;
+        const rawBeforeCursor = (() => {
+          if (!lineEl) return stripZws(textNode.textContent.substring(0, range.startOffset));
+          const rLine = document.createRange();
+          rLine.selectNodeContents(lineEl.querySelector('.visual-line-text') || lineEl);
+          rLine.setEnd(textNode, range.startOffset);
+          return stripZws(rLine.toString());
+        })();
+        const beforeCursor = rawBeforeCursor.trimStart();
+        const leadingIndent = getLineIndentLevel(rawBeforeCursor);
+        const isAtLineStart = rawBeforeCursor.length > 0 && /^[\t ]*(?:-\s*\[[ xX]\]|[-*]|#{1,6}|>\s*\[![a-zA-Z0-9_-]+\]|>|\[[ xX]\])$/.test(rawBeforeCursor);
 
         // Upgrade de lista (•) para checklist se digitar [ ] ou [x]
         if (lineEl && lineEl.classList.contains('md-list-item') && /^\[([ xX])\]$/.test(beforeCursor)) {
           e.preventDefault();
           const isChecked = beforeCursor.toLowerCase().includes('x');
+          const curIndent = parseInt(lineEl.dataset.indent || '0', 10) || 0;
           const taskDiv = document.createElement('div');
           taskDiv.className = `visual-line md-task-item ${isChecked ? 'completed' : ''}`;
           taskDiv.innerHTML = `<span class="visual-check-wrap" contenteditable="false"><input type="checkbox" class="md-task-checkbox" ${isChecked ? 'checked' : ''} /></span><span class="visual-line-text">\u200B</span>`;
+          setVisualLineIndent(taskDiv, curIndent);
           lineEl.replaceWith(taskDiv);
           setCaretInsideElementEnd(taskDiv.querySelector('.visual-line-text'));
           textarea.value = visualEditorToMarkdown(visual);
@@ -1411,7 +1547,7 @@ function setupVisualEditorLiveKeys() {
         // Prefixos no início de linha limpa
         const isPlainLine = !lineEl || (!lineEl.classList.contains('md-task-item') && !lineEl.classList.contains('md-list-item') && !lineEl.classList.contains('md-callout') && !lineEl.classList.contains('md-blockquote') && !lineEl.classList.contains('md-visual-heading'));
         if (isPlainLine && isAtLineStart) {
-          // Checklist direto: - [ ] ou - [x]
+          // Checklist direto: - [ ] ou - [x] (inclusive após tabs)
           const taskMatch = beforeCursor.match(/^-\s*\[([ xX])\]$/);
           if (taskMatch) {
             e.preventDefault();
@@ -1420,19 +1556,21 @@ function setupVisualEditorLiveKeys() {
             const taskDiv = document.createElement('div');
             taskDiv.className = `visual-line md-task-item ${isChecked ? 'completed' : ''}`;
             taskDiv.innerHTML = `<span class="visual-check-wrap" contenteditable="false"><input type="checkbox" class="md-task-checkbox" ${isChecked ? 'checked' : ''} /></span><span class="visual-line-text">\u200B</span>`;
+            setVisualLineIndent(taskDiv, leadingIndent);
             targetLine.replaceWith(taskDiv);
             setCaretInsideElementEnd(taskDiv.querySelector('.visual-line-text'));
             textarea.value = visualEditorToMarkdown(visual);
             return;
           }
 
-          // Lista com marcador: - ou *
+          // Lista com marcador: - ou * (inclusive após tabs)
           if (/^[-*]$/.test(beforeCursor)) {
             e.preventDefault();
             const targetLine = ensureCurrentVisualLine(visual, range);
             const listDiv = document.createElement('div');
             listDiv.className = 'visual-line md-list-item';
             listDiv.innerHTML = `<span class="visual-bullet" contenteditable="false">• </span><span class="visual-line-text">\u200B</span>`;
+            setVisualLineIndent(listDiv, leadingIndent);
             targetLine.replaceWith(listDiv);
             setCaretInsideElementEnd(listDiv.querySelector('.visual-line-text'));
             textarea.value = visualEditorToMarkdown(visual);
@@ -1517,12 +1655,18 @@ function setupVisualEditorLiveKeys() {
         return;
       }
 
-      // Continua ou encerra checklist / lista / blockquote
+      // Continua ou encerra checklist / lista / blockquote (preservando indentação)
       if (lineEl && (lineEl.classList.contains('md-task-item') || lineEl.classList.contains('md-list-item') || lineEl.classList.contains('md-blockquote'))) {
         e.preventDefault();
         const text = stripZws((lineEl.querySelector('.visual-line-text') || lineEl).textContent).replace(/\u00a0/g, '').trim();
+        const curIndent = parseInt(lineEl.dataset.indent || '0', 10) || 0;
 
         if (!text) {
+          if (curIndent > 0 && (lineEl.classList.contains('md-task-item') || lineEl.classList.contains('md-list-item'))) {
+            setVisualLineIndent(lineEl, curIndent - 1);
+            textarea.value = visualEditorToMarkdown(visual);
+            return;
+          }
           const plain = document.createElement('div');
           plain.className = 'visual-line';
           plain.innerHTML = '<br>';
@@ -1536,9 +1680,11 @@ function setupVisualEditorLiveKeys() {
         if (lineEl.classList.contains('md-task-item')) {
           nextLine.className = 'visual-line md-task-item';
           nextLine.innerHTML = `<span class="visual-check-wrap" contenteditable="false"><input type="checkbox" class="md-task-checkbox" /></span><span class="visual-line-text">\u200B</span>`;
+          setVisualLineIndent(nextLine, curIndent);
         } else if (lineEl.classList.contains('md-list-item')) {
           nextLine.className = 'visual-line md-list-item';
           nextLine.innerHTML = `<span class="visual-bullet" contenteditable="false">• </span><span class="visual-line-text">\u200B</span>`;
+          setVisualLineIndent(nextLine, curIndent);
         } else {
           nextLine.className = 'visual-line md-blockquote';
           nextLine.innerHTML = `<span class="visual-line-text">\u200B</span>`;
@@ -1625,7 +1771,7 @@ function setupVisualEditorLiveKeys() {
         return false;
       })();
 
-      // 3a. Remove tag de bloco mantendo o conteúdo da linha
+      // 3a. Recua indentação (se indent > 0) ou remove tag de bloco mantendo o conteúdo da linha
       if (lineEl && isAtStartOfLineText && (
         lineEl.classList.contains('md-task-item') ||
         lineEl.classList.contains('md-list-item') ||
@@ -1635,6 +1781,13 @@ function setupVisualEditorLiveKeys() {
         lineEl.classList.contains('md-code-block')
       )) {
         e.preventDefault();
+        const curIndent = parseInt(lineEl.dataset.indent || '0', 10) || 0;
+        if (curIndent > 0 && (lineEl.classList.contains('md-task-item') || lineEl.classList.contains('md-list-item'))) {
+          setVisualLineIndent(lineEl, curIndent - 1);
+          textarea.value = visualEditorToMarkdown(visual);
+          return;
+        }
+
         const textContainer = lineEl.querySelector('.visual-line-text') || lineEl;
         const plain = document.createElement('div');
         plain.className = 'visual-line';
@@ -2417,6 +2570,7 @@ function applyCommandToVisual(cmd) {
     };
 
     if (cmd.id === 'checklist') {
+      const existingIndent = parseInt(lineEl.dataset.indent || '0', 10) || getLineIndentLevel(rawLineText);
       if (lineEl.classList.contains('md-task-item')) {
         buildPlainLine();
       } else {
@@ -2428,13 +2582,19 @@ function applyCommandToVisual(cmd) {
         wrap.innerHTML = '<input type="checkbox" class="md-task-checkbox" />';
         const textSpan = document.createElement('span');
         textSpan.className = 'visual-line-text';
-        if (preservedNodes.length > 0 && stripZws(rawLineText)) {
+        const strippedRaw = rawLineText.replace(/^[\t ]+/, '');
+        if (preservedNodes.length > 0 && stripZws(strippedRaw)) {
+          // Remove tabs/espaços iniciais do primeiro nó se virou indentação do checklist
+          if (preservedNodes[0].nodeType === Node.TEXT_NODE) {
+            preservedNodes[0].textContent = preservedNodes[0].textContent.replace(/^[\t ]+/, '');
+          }
           preservedNodes.forEach(n => textSpan.appendChild(n));
         } else {
           textSpan.textContent = '\u200B';
         }
         taskDiv.appendChild(wrap);
         taskDiv.appendChild(textSpan);
+        setVisualLineIndent(taskDiv, existingIndent);
         lineEl.replaceWith(taskDiv);
         setCaretInsideElementEnd(textSpan);
       }

@@ -105,9 +105,27 @@ export function renderCardMarkdown(rawText) {
   const lines = html.split('\n');
   const processedLines = [];
 
+  const getIndentLevel = (rawLine) => {
+    const leading = (rawLine.match(/^[\t ]*/) || [''])[0];
+    let levels = 0;
+    let spaceRun = 0;
+    for (const ch of leading) {
+      if (ch === '\t') {
+        levels += 1 + Math.floor(spaceRun / 2);
+        spaceRun = 0;
+      } else {
+        spaceRun += 1;
+      }
+    }
+    levels += Math.floor(spaceRun / 2);
+    return Math.min(levels, 10);
+  };
+
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
     const trimmed = line.trim();
+    const indentLevel = getIndentLevel(line);
+    const indentStyle = indentLevel > 0 ? ` style="margin-left: ${indentLevel * 20}px;"` : '';
 
     // Linha horizontal (--- ou ***)
     if (/^(\*{3,}|-{3,})$/.test(trimmed)) {
@@ -115,15 +133,15 @@ export function renderCardMarkdown(rawText) {
       continue;
     }
 
-    // Task list / Checklists do Obsidian (- [ ] ou - [x] ou - [-])
+    // Task list / Checklists do Obsidian (- [ ] ou - [x]) com suporte a indentação (Tab)
     if (/^-\s*\[ \]\s*(.*)$/.test(trimmed)) {
       const content = trimmed.replace(/^-\s*\[ \]\s*/, '');
-      processedLines.push(`<div class="md-task-item"><input type="checkbox" class="md-task-checkbox" data-task-idx="${i}" onclick="window.handleTaskToggle(event, this)" /> <span>${content}</span></div>`);
+      processedLines.push(`<div class="md-task-item"${indentStyle}><input type="checkbox" class="md-task-checkbox" data-task-idx="${i}" onclick="window.handleTaskToggle(event, this)" /> <span>${content}</span></div>`);
       continue;
     }
     if (/^-\s*\[x\]\s*(.*)$/i.test(trimmed)) {
       const content = trimmed.replace(/^-\s*\[x\]\s*/i, '');
-      processedLines.push(`<div class="md-task-item completed"><input type="checkbox" checked class="md-task-checkbox" data-task-idx="${i}" onclick="window.handleTaskToggle(event, this)" /> <span class="md-task-done">${content}</span></div>`);
+      processedLines.push(`<div class="md-task-item completed"${indentStyle}><input type="checkbox" checked class="md-task-checkbox" data-task-idx="${i}" onclick="window.handleTaskToggle(event, this)" /> <span class="md-task-done">${content}</span></div>`);
       continue;
     }
 
@@ -169,14 +187,18 @@ export function renderCardMarkdown(rawText) {
       continue;
     }
 
-    // Lista não-ordenada simples (- item ou * item)
+    // Lista não-ordenada simples (- item ou * item) com suporte a indentação (Tab)
     if (/^[-*+]\s+(.*)$/.test(trimmed)) {
-      processedLines.push(`<div class="md-list-item">• ${trimmed.replace(/^[-*+]\s+/, '')}</div>`);
+      processedLines.push(`<div class="md-list-item"${indentStyle}>• ${trimmed.replace(/^[-*+]\s+/, '')}</div>`);
       continue;
     }
 
+    // Preserva espaçamento inicial e tabs em texto comum
+    line = line.replace(/^([\t ]+)/, (m) => m.replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;').replace(/ /g, '&nbsp;'));
+    line = line.replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+
     // Tags inline (#tag ou #projeto/etapa) - clicável para filtrar
-    line = line.replace(/(^|\s)#([a-zA-Z0-9_\-\/]+)(?=\s|$)/g, '$1<span class="md-tag" data-tag="$2" onclick="window.handleTagClick(event, this)" title="Filtrar por #$2">#$2</span>');
+    line = line.replace(/(^|\s|&nbsp;)#([a-zA-Z0-9_\-\/]+)(?=\s|$)/g, '$1<span class="md-tag" data-tag="$2" onclick="window.handleTagClick(event, this)" title="Filtrar por #$2">#$2</span>');
 
     processedLines.push(line);
   }

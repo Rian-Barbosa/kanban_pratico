@@ -17,6 +17,7 @@ data/attachments/*
 !data/attachments/.gitkeep
 data/vaults/*
 !data/vaults/.gitkeep
+data/comments/*
 data/*.key
 data/*.json
 data/*.sqlite*

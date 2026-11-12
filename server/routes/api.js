@@ -24,7 +24,11 @@ import {
   getUserWorkspaceRole,
   canManageWorkspace,
   canAccessProject,
-  canManageProject
+  canManageProject,
+  getProjectCommentCounts,
+  listCardComments,
+  addCardComment,
+  deleteCardComment
 } from '../storage.js';
 import { verifyUser, listUsernames } from '../auth.js';
 
@@ -33,6 +37,13 @@ const ALLOWED_IMAGE_MIMES = {
   'image/jpeg': '.jpg',
   'image/webp': '.webp',
   'image/gif': '.gif'
+};
+const EXT_TO_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
 };
 const ALLOWED_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
@@ -319,6 +330,7 @@ export default async function apiRoutes(fastify, options) {
       return {
         ...project,
         projectMembers: Array.from(projectMembersSet.values()),
+        commentCounts: getProjectCommentCounts(id),
         canManage: canManageProject(project, ws, username)
       };
     });
@@ -472,8 +484,75 @@ export default async function apiRoutes(fastify, options) {
       return { ok: true };
     });
 
-    // Upload de Imagens (Ctrl+V ou Arquivo) com whitelist estrita
-    protectedRoutes.post('/api/attachments', async (req, reply) => {
+    // --- Rotas de Comentários nos Cards ---
+    protectedRoutes.get('/api/projects/:id/cards/:cardId/comments', async (req, reply) => {
+      const username = req.session.user.username;
+      const { id, cardId } = req.params;
+      const project = loadProject(id);
+      if (!project) {
+        return reply.code(404).send({ error: 'Projeto não encontrado.' });
+      }
+      const ws = getWorkspace(project.workspace) || getWorkspace('ws_default');
+      if (!canAccessProject(project, ws, username)) {
+        return reply.code(403).send({ error: 'Sem permissão para acessar este projeto.' });
+      }
+      return listCardComments(id, cardId);
+    });
+
+    protectedRoutes.post('/api/projects/:id/cards/:cardId/comments', async (req, reply) => {
+      const username = req.session.user.username;
+      const { id, cardId } = req.params;
+      const project = loadProject(id);
+      if (!project) {
+        return reply.code(404).send({ error: 'Projeto não encontrado.' });
+      }
+      const ws = getWorkspace(project.workspace) || getWorkspace('ws_default');
+      if (!canAccessProject(project, ws, username)) {
+        return reply.code(403).send({ error: 'Sem permissão para comentar neste projeto.' });
+      }
+      const { content } = req.body || {};
+      if (typeof content !== 'string' || !content.trim()) {
+        return reply.code(400).send({ error: 'O comentário não pode estar vazio.' });
+      }
+      const comment = addCardComment(id, cardId, username, content.trim());
+      if (!comment) {
+        return reply.code(400).send({ error: 'Identificador de card inválido.' });
+      }
+      return comment;
+    });
+
+    protectedRoutes.delete('/api/projects/:id/cards/:cardId/comments/:commentId', async (req, reply) => {
+      const username = req.session.user.username;
+      const { id, cardId, commentId } = req.params;
+      const project = loadProject(id);
+      if (!project) {
+        return reply.code(404).send({ error: 'Projeto não encontrado.' });
+      }
+      const ws = getWorkspace(project.workspace) || getWorkspace('ws_default');
+      if (!canAccessProject(project, ws, username)) {
+        return reply.code(403).send({ error: 'Sem permissão para acessar este projeto.' });
+      }
+      const canManage = canManageProject(project, ws, username);
+      const result = deleteCardComment(id, cardId, commentId, username, canManage);
+      if (!result.ok) {
+        return reply.code(result.status || 400).send({ error: result.error });
+      }
+      return { ok: true };
+    });
+
+    // Upload de Imagens isolado por projeto (data/attachments/<projectId>/)
+    protectedRoutes.post('/api/projects/:id/attachments', async (req, reply) => {
+      const username = req.session.user.username;
+      const safeProjectId = sanitizeIdToken(req.params.id);
+      const project = loadProject(safeProjectId);
+      if (!project) {
+        return reply.code(404).send({ error: 'Projeto não encontrado.' });
+      }
+      const ws = getWorkspace(project.workspace) || getWorkspace('ws_default');
+      if (!canAccessProject(project, ws, username)) {
+        return reply.code(403).send({ error: 'Sem permissão para enviar anexos neste projeto.' });
+      }
+
       const data = await req.file();
       if (!data) {
         return reply.code(400).send({ error: 'Nenhum arquivo enviado.' });
@@ -486,22 +565,71 @@ export default async function apiRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Tipo de arquivo não permitido. Envie apenas imagens PNG, JPG, WEBP ou GIF.' });
       }
 
-      if (!fs.existsSync(CONFIG.ATTACHMENTS_DIR)) {
-        fs.mkdirSync(CONFIG.ATTACHMENTS_DIR, { recursive: true });
+      const projectAttachDir = path.join(CONFIG.ATTACHMENTS_DIR, safeProjectId);
+      if (!fs.existsSync(projectAttachDir)) {
+        fs.mkdirSync(projectAttachDir, { recursive: true });
       }
 
       const ext = origExt && ALLOWED_IMAGE_EXTS.has(origExt) ? origExt : mimeExt;
       const fileHash = crypto.randomBytes(8).toString('hex');
       const savedFilename = `img_${Date.now()}_${fileHash}${ext}`;
-      const savePath = path.join(CONFIG.ATTACHMENTS_DIR, savedFilename);
+      const savePath = path.join(projectAttachDir, savedFilename);
 
       await pipeline(data.file, fs.createWriteStream(savePath));
 
       return {
         filename: savedFilename,
-        url: `/attachments/${savedFilename}`,
-        markdown: `![[${savedFilename}]]`
+        url: `/attachments/${safeProjectId}/${savedFilename}`,
+        markdown: `![[${safeProjectId}/${savedFilename}]]`
       };
+    });
+
+    // Servir anexos de um projeto com verificação de sessão e permissão (canAccessProject)
+    protectedRoutes.get('/attachments/:projectId/:filename', async (req, reply) => {
+      const username = req.session.user.username;
+      const safeProjectId = sanitizeIdToken(req.params.projectId);
+      const safeFilename = path.basename(req.params.filename || '').replace(/[^a-zA-Z0-9_.-]/g, '');
+      if (!safeProjectId || !safeFilename) {
+        return reply.code(400).send({ error: 'Caminho inválido.' });
+      }
+
+      const project = loadProject(safeProjectId);
+      if (!project) {
+        return reply.code(404).send({ error: 'Projeto não encontrado.' });
+      }
+
+      const ws = getWorkspace(project.workspace) || getWorkspace('ws_default');
+      if (!canAccessProject(project, ws, username)) {
+        return reply.code(403).send({ error: 'Sem permissão para visualizar anexos deste projeto.' });
+      }
+
+      const filePath = path.join(CONFIG.ATTACHMENTS_DIR, safeProjectId, safeFilename);
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        return reply.code(404).send({ error: 'Anexo não encontrado.' });
+      }
+
+      const ext = path.extname(safeFilename).toLowerCase();
+      reply.header('Content-Type', EXT_TO_MIME[ext] || 'application/octet-stream');
+      reply.header('Cache-Control', 'private, max-age=86400');
+      return reply.send(fs.createReadStream(filePath));
+    });
+
+    // Fallback autenticado para anexos antigos salvos na raiz de data/attachments/
+    protectedRoutes.get('/attachments/:filename', async (req, reply) => {
+      const safeFilename = path.basename(req.params.filename || '').replace(/[^a-zA-Z0-9_.-]/g, '');
+      if (!safeFilename) {
+        return reply.code(400).send({ error: 'Arquivo inválido.' });
+      }
+
+      const filePath = path.join(CONFIG.ATTACHMENTS_DIR, safeFilename);
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        return reply.code(404).send({ error: 'Anexo não encontrado.' });
+      }
+
+      const ext = path.extname(safeFilename).toLowerCase();
+      reply.header('Content-Type', EXT_TO_MIME[ext] || 'application/octet-stream');
+      reply.header('Cache-Control', 'private, max-age=86400');
+      return reply.send(fs.createReadStream(filePath));
     });
 
     // --- Rotas de Configurações Gerais (Restrito ao Admin com senha) ---

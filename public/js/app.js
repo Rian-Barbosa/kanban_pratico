@@ -1,4 +1,4 @@
-import { renderCardMarkdown, escapeHtml } from './markdown.js';
+import { renderCardMarkdown, escapeHtml, buildAttachmentImageUrl } from './markdown.js';
 
 let currentProject = null;
 let currentUser = null;
@@ -789,13 +789,20 @@ export function renderBoard() {
       if (card.dueDate) {
         badgesHtml += `<span class="badge-pill badge-date">📅 ${card.dueDate}</span>`;
       }
+      const commentCount = (currentProject.commentCounts && currentProject.commentCounts[card.id]) || 0;
+      if (commentCount > 0) {
+        badgesHtml += `<button type="button" class="badge-pill badge-date badge-comment-link" onclick="event.stopPropagation(); openEditCardModal('${col.id}', '${card.id}', true)" title="Abrir comentários deste card">💬 ${commentCount}</button>`;
+      }
 
       cardEl.innerHTML = `
-        ${canManage ? `
         <div class="card-header-actions">
-          <button class="card-action-btn" title="Editar" onclick="openEditCardModal('${col.id}', '${card.id}')">✏️</button>
-          <button class="card-action-btn delete" title="Excluir" onclick="deleteCard('${col.id}', '${card.id}', event)">🗑️</button>
-        </div>` : ''}
+          ${canManage ? `
+            <button class="card-action-btn" title="Editar e Comentários" onclick="openEditCardModal('${col.id}', '${card.id}')">✏️</button>
+            <button class="card-action-btn delete" title="Excluir" onclick="deleteCard('${col.id}', '${card.id}', event)">🗑️</button>
+          ` : `
+            <button class="card-action-btn" title="Abrir Detalhes e Comentários" onclick="openEditCardModal('${col.id}', '${card.id}')">💬</button>
+          `}
+        </div>
         <div class="card-markdown">${renderCardMarkdown(card.content)}</div>
         ${badgesHtml ? `<div class="card-meta">${badgesHtml}</div>` : ''}
       `;
@@ -808,14 +815,12 @@ export function renderBoard() {
         });
       }
 
-      // Clique duplo no card também abre edição (apenas para quem pode gerenciar)
-      if (canManage) {
-        cardEl.addEventListener('dblclick', (e) => {
-          if (e.target.tagName !== 'IMG' && !e.target.closest('.card-header-actions')) {
-            openEditCardModal(col.id, card.id);
-          }
-        });
-      }
+      // Clique duplo no card abre detalhes e comentários (ou edição para admins)
+      cardEl.addEventListener('dblclick', (e) => {
+        if (e.target.tagName !== 'IMG' && !e.target.closest('.card-header-actions')) {
+          openEditCardModal(col.id, card.id);
+        }
+      });
 
       // Clique em qualquer imagem do card abre o visualizador Lightbox
       cardEl.querySelectorAll('.card-markdown img').forEach(img => {
@@ -1328,11 +1333,17 @@ function renderInlineVisualHtml(rawLine) {
     return `\u0000IC${idx}\u0000`;
   });
 
-  // Protege anexos (![[arquivo]] ou ![[arquivo|largura]])
+  // Protege anexos (![[arquivo]] ou ![[projeto/arquivo|largura]]) e exibe preview visual da imagem
   text = text.replace(/!\[\[(.*?)\]\]/g, (m, inner) => {
     const idx = codeTokens.length;
-    const fname = inner.split('|')[0].trim();
-    codeTokens.push(`<span class="md-attachment-token" contenteditable="false" data-raw="![[${inner}]]">🖼️ ${fname}</span>`);
+    const parts = inner.split('|');
+    const imgUrl = buildAttachmentImageUrl(parts[0]);
+    const altText = parts[0].trim().split('/').pop() || 'imagem';
+    const cleanWidth = parts[1] && /^\d+$/.test(parts[1].trim()) ? parseInt(parts[1].trim(), 10) : null;
+    const styleAttr = cleanWidth ? `style="max-width: ${cleanWidth}px;"` : '';
+    codeTokens.push(
+      `<span class="md-attachment-token md-attachment-preview" contenteditable="false" data-raw="![[${escapeHtml(inner)}]]"><img src="${imgUrl}" alt="${escapeHtml(altText)}" class="md-visual-img" ${styleAttr} /></span>`
+    );
     return `\u0000IC${idx}\u0000`;
   });
 
@@ -1822,21 +1833,34 @@ function tryConvertHashtagBeforeSpace(textNode, cursorOffset, visual, textarea, 
 
 // Escuta digitação, atalhos ao vivo, Enter e Backspace no bloco visual
 function setupVisualEditorLiveKeys() {
-  const visual = document.getElementById('card-content-visual');
-  const textarea = document.getElementById('card-content-input');
-  if (!visual || !textarea) return;
+  const cardVisual = document.getElementById('card-content-visual');
+  const cardTextarea = document.getElementById('card-content-input');
+  if (cardVisual && cardTextarea) {
+    bindVisualEditorInstance(cardVisual, cardTextarea);
+  }
+
+  const commentVisual = document.getElementById('comment-content-visual');
+  if (commentVisual) {
+    bindVisualEditorInstance(commentVisual, null);
+  }
+}
+
+function bindVisualEditorInstance(visual, realTextarea) {
+  const textarea = realTextarea || { value: '' };
 
   // Rastreia continuamente a seleção do visual e da textarea
   const trackSelection = () => {
-    if (document.getElementById('card-modal')?.style.display === 'flex') {
+    if (realTextarea && document.getElementById('card-modal')?.style.display === 'flex') {
       saveEditorSelection();
     }
   };
   visual.addEventListener('keyup', trackSelection);
   visual.addEventListener('mouseup', trackSelection);
-  textarea.addEventListener('keyup', trackSelection);
-  textarea.addEventListener('mouseup', trackSelection);
-  textarea.addEventListener('select', trackSelection);
+  if (realTextarea) {
+    realTextarea.addEventListener('keyup', trackSelection);
+    realTextarea.addEventListener('mouseup', trackSelection);
+    realTextarea.addEventListener('select', trackSelection);
+  }
 
   // Alterna checkbox diretamente no modo visual
   visual.addEventListener('change', (e) => {
@@ -1850,7 +1874,7 @@ function setupVisualEditorLiveKeys() {
   });
 
   // Suporte completo a Tab / Shift+Tab no modo Texto Puro (igual ao Obsidian)
-  textarea.addEventListener('keydown', (e) => {
+  if (realTextarea) textarea.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
 
@@ -2317,6 +2341,32 @@ function setupVisualEditorLiveKeys() {
 // Modal de Criação / Edição de Card
 let targetColForNewCard = null;
 
+function setCardModalEditability(canEdit) {
+  const modeControls = document.getElementById('card-editor-mode-controls');
+  const editorWrapper = document.getElementById('card-editor-wrapper');
+  const readonlyBox = document.getElementById('card-content-readonly');
+  const saveBtn = document.getElementById('save-card-btn');
+  const cancelBtn = document.getElementById('cancel-card-btn');
+  const urgencySel = document.getElementById('card-urgency-select');
+  const dateInput = document.getElementById('card-date-input');
+  const assigneesHint = document.getElementById('card-assignees-hint');
+  const assigneesContainer = document.getElementById('card-assignees-container');
+
+  if (modeControls) modeControls.style.display = canEdit ? 'flex' : 'none';
+  if (editorWrapper) editorWrapper.style.display = canEdit ? '' : 'none';
+  if (readonlyBox) readonlyBox.style.display = canEdit ? 'none' : 'block';
+  if (saveBtn) saveBtn.style.display = canEdit ? '' : 'none';
+  if (cancelBtn) cancelBtn.textContent = canEdit ? 'Cancelar' : 'Fechar';
+  if (urgencySel) urgencySel.disabled = !canEdit;
+  if (dateInput) dateInput.disabled = !canEdit;
+  if (assigneesHint) assigneesHint.style.display = canEdit ? '' : 'none';
+  if (assigneesContainer) {
+    assigneesContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.disabled = !canEdit;
+    });
+  }
+}
+
 window.openNewCardModal = function (colId) {
   if (!currentProject || !currentProject.canManage) return;
   editingCardId = null;
@@ -2324,6 +2374,8 @@ window.openNewCardModal = function (colId) {
   savedVisualRange = null;
   savedRawSelection = null;
   renderAssigneesSelection([]);
+  setCardModalEditability(true);
+
   document.getElementById('card-modal-title').textContent = 'Novo Item';
   document.getElementById('save-card-btn').textContent = 'Adicionar Item';
   document.getElementById('card-content-input').value = '';
@@ -2332,6 +2384,15 @@ window.openNewCardModal = function (colId) {
 
   const visual = document.getElementById('card-content-visual');
   if (visual) visual.innerHTML = '';
+
+  const notice = document.getElementById('comments-new-card-notice');
+  const composer = document.getElementById('comment-composer-box');
+  const commentsList = document.getElementById('card-comments-list');
+  const countBadge = document.getElementById('comments-count-badge');
+  if (notice) notice.style.display = 'block';
+  if (composer) composer.style.display = 'none';
+  if (commentsList) commentsList.innerHTML = '';
+  if (countBadge) countBadge.textContent = '0';
 
   switchEditorMode(currentEditorMode);
 
@@ -2343,8 +2404,8 @@ window.openNewCardModal = function (colId) {
   }
 };
 
-window.openEditCardModal = function (colId, cardId) {
-  if (!currentProject || !currentProject.canManage) return;
+window.openEditCardModal = async function (colId, cardId, focusComments = false) {
+  if (!currentProject) return;
   editingCardId = cardId;
   targetColForNewCard = colId;
   savedVisualRange = null;
@@ -2354,12 +2415,15 @@ window.openEditCardModal = function (colId, cardId) {
   const card = col.cards.find(c => c.id === cardId);
   if (!card) return;
 
+  const canManage = Boolean(currentProject.canManage);
   const currentAssignees = Array.isArray(card.assignees)
     ? card.assignees
     : (card.assignee ? [card.assignee] : []);
 
   renderAssigneesSelection(currentAssignees);
-  document.getElementById('card-modal-title').textContent = 'Editar Item';
+  setCardModalEditability(canManage);
+
+  document.getElementById('card-modal-title').textContent = canManage ? 'Editar Item' : 'Detalhes do Item';
   document.getElementById('save-card-btn').textContent = 'Salvar Alterações';
   document.getElementById('card-content-input').value = card.content || '';
   document.getElementById('card-urgency-select').value = card.urgency || '';
@@ -2368,13 +2432,221 @@ window.openEditCardModal = function (colId, cardId) {
   const visual = document.getElementById('card-content-visual');
   if (visual) visual.innerHTML = renderVisualEditorHtml(card.content || '');
 
-  switchEditorMode(currentEditorMode);
+  const readonlyBox = document.getElementById('card-content-readonly');
+  if (!canManage && readonlyBox) {
+    readonlyBox.innerHTML = renderCardMarkdown(card.content || '');
+    readonlyBox.querySelectorAll('.task-list-item-checkbox').forEach(cb => {
+      cb.disabled = true;
+    });
+    readonlyBox.querySelectorAll('img').forEach(img => {
+      img.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLightbox(img.src);
+      });
+    });
+  }
+
+  if (canManage) {
+    switchEditorMode(currentEditorMode);
+  }
+
+  const notice = document.getElementById('comments-new-card-notice');
+  const composer = document.getElementById('comment-composer-box');
+  const commentVisual = document.getElementById('comment-content-visual');
+  const commentErr = document.getElementById('comment-error');
+  if (notice) notice.style.display = 'none';
+  if (composer) composer.style.display = 'block';
+  if (commentVisual) commentVisual.innerHTML = '';
+  if (commentErr) {
+    commentErr.textContent = '';
+    commentErr.style.display = 'none';
+  }
 
   document.getElementById('card-modal').style.display = 'flex';
-  if (currentEditorMode === 'live' && visual) {
+  await loadCardComments(currentProject.id, cardId);
+
+  if (focusComments) {
+    const commentsSection = document.getElementById('card-comments-section');
+    if (commentsSection) commentsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (commentVisual) commentVisual.focus();
+  } else if (canManage && currentEditorMode === 'live' && visual) {
     visual.focus();
-  } else {
-    document.getElementById('card-content-input').focus();
+  } else if (!canManage && commentVisual) {
+    commentVisual.focus();
+  }
+};
+
+function formatCommentDate(isoStr) {
+  if (!isoStr) return '';
+  try {
+    return new Date(isoStr).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return '';
+  }
+}
+
+async function loadCardComments(projectId, cardId) {
+  const listEl = document.getElementById('card-comments-list');
+  const countBadge = document.getElementById('comments-count-badge');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<p style="font-size: 0.8rem; color: var(--text-muted);">Carregando comentários...</p>';
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}/comments`);
+    if (!res.ok) {
+      listEl.innerHTML = '<p style="font-size: 0.8rem; color: #991b1b;">Erro ao carregar comentários.</p>';
+      return;
+    }
+    const comments = await res.json();
+    if (countBadge) countBadge.textContent = String(comments.length);
+
+    if (!currentProject.commentCounts) currentProject.commentCounts = {};
+    currentProject.commentCounts[cardId] = comments.length;
+
+    if (comments.length === 0) {
+      listEl.innerHTML = '<p style="font-size: 0.82rem; color: var(--text-muted); text-align: center; padding: 14px;">Nenhum comentário ainda. Seja o primeiro a comentar!</p>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    comments.forEach(cmt => {
+      const item = document.createElement('div');
+      item.className = 'comment-item';
+
+      const canDelete = Boolean(currentProject.canManage);
+
+      const initial = (cmt.author || '?')[0].toUpperCase();
+      item.innerHTML = `
+        <div class="comment-item-header">
+          <div class="comment-author-meta">
+            <span class="comment-avatar">${escapeHtml(initial)}</span>
+            <strong>${escapeHtml(cmt.author || 'Usuário')}</strong>
+            <span class="comment-date">${escapeHtml(formatCommentDate(cmt.createdAt))}</span>
+          </div>
+          ${canDelete ? `<button type="button" class="card-action-btn delete" title="Excluir comentário" onclick="deleteCardCommentAction('${escapeHtml(cmt.id)}')">🗑️</button>` : ''}
+        </div>
+        <div class="comment-body card-markdown">${renderCardMarkdown(cmt.content || '')}</div>
+      `;
+
+      item.querySelectorAll('.task-list-item-checkbox').forEach(cb => {
+        cb.disabled = true;
+      });
+      item.querySelectorAll('.comment-body img').forEach(img => {
+        img.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openLightbox(img.src);
+        });
+      });
+
+      listEl.appendChild(item);
+    });
+  } catch {
+    listEl.innerHTML = '<p style="font-size: 0.8rem; color: #991b1b;">Falha de conexão ao carregar comentários.</p>';
+  }
+}
+
+window.submitCardComment = async function () {
+  if (!currentProject || !editingCardId) return;
+  const commentVisual = document.getElementById('comment-content-visual');
+  const errEl = document.getElementById('comment-error');
+  if (!commentVisual) return;
+
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  const content = visualEditorToMarkdown(commentVisual).trim();
+  if (!content) {
+    if (errEl) {
+      errEl.textContent = 'Escreva algo antes de comentar.';
+      errEl.style.display = 'block';
+    }
+    commentVisual.focus();
+    return;
+  }
+
+  const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}/cards/${encodeURIComponent(editingCardId)}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (errEl) {
+      errEl.textContent = data.error || 'Não foi possível enviar o comentário.';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  commentVisual.innerHTML = '';
+  await loadCardComments(currentProject.id, editingCardId);
+  renderBoard();
+};
+
+window.deleteCardCommentAction = async function (commentId) {
+  if (!currentProject || !editingCardId) return;
+  const confirmed = await showConfirmModal('Deseja excluir este comentário?', 'Excluir Comentário');
+  if (!confirmed) return;
+
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(currentProject.id)}/cards/${encodeURIComponent(editingCardId)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'DELETE' }
+  );
+  if (res.ok) {
+    await loadCardComments(currentProject.id, editingCardId);
+    renderBoard();
+  }
+};
+
+window.handleCommentImageUpload = async function (e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file || !currentProject) return;
+
+  const errEl = document.getElementById('comment-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}/attachments`, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (errEl) {
+        errEl.textContent = data.error || 'Erro ao enviar imagem.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+
+    const commentVisual = document.getElementById('comment-content-visual');
+    if (commentVisual) {
+      const currentMd = visualEditorToMarkdown(commentVisual);
+      const nextMd = (currentMd ? currentMd + '\n' : '') + data.markdown;
+      commentVisual.innerHTML = renderVisualEditorHtml(nextMd);
+      commentVisual.focus();
+    }
+  } catch {
+    if (errEl) {
+      errEl.textContent = 'Falha de conexão ao enviar imagem.';
+      errEl.style.display = 'block';
+    }
   }
 };
 
@@ -2501,33 +2773,50 @@ function setupGlobalClipboardPaste() {
       }
     }
 
-    if (!imageItem) return;
+    if (!imageItem || !currentProject) return;
 
     const blob = imageItem.getAsFile();
     const formData = new FormData();
     formData.append('file', blob, 'clipboard_image.png');
 
     try {
-      const res = await fetch('/api/attachments', {
+      const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}/attachments`, {
         method: 'POST',
         body: formData
       });
 
       if (res.ok) {
         const data = await res.json();
-        // Se o modal de criação estiver aberto, adiciona no editor ativo
+        const isCardModalOpen = document.getElementById('card-modal').style.display === 'flex';
+        const commentVisual = document.getElementById('comment-content-visual');
+        const activeEl = document.activeElement;
+        const isCommentFocused = Boolean(
+          commentVisual &&
+          (activeEl === commentVisual || commentVisual.contains(activeEl))
+        );
+
+        if (isCardModalOpen && isCommentFocused) {
+          const currentMd = visualEditorToMarkdown(commentVisual);
+          const nextMd = (currentMd ? currentMd + '\n' : '') + data.markdown + '\n';
+          commentVisual.innerHTML = renderVisualEditorHtml(nextMd);
+          setCaretInsideElementEnd(commentVisual);
+          return;
+        }
+
+        // Se o modal de criação/edição estiver aberto e usuário puder editar, adiciona no editor do card
         const textarea = document.getElementById('card-content-input');
         const visual = document.getElementById('card-content-visual');
-        if (document.getElementById('card-modal').style.display === 'flex' && textarea) {
+        if (isCardModalOpen && currentProject?.canManage && textarea) {
           if (currentEditorMode === 'live' && visual) {
             textarea.value = visualEditorToMarkdown(visual);
           }
           textarea.value = (textarea.value ? textarea.value + '\n' : '') + data.markdown + '\n';
           if (currentEditorMode === 'live' && visual) {
             visual.innerHTML = renderVisualEditorHtml(textarea.value);
+            setCaretInsideElementEnd(visual);
           }
-        } else if (currentProject && currentProject.columns.length > 0) {
-          // Cria direto um card na primeira coluna
+        } else if (!isCardModalOpen && currentProject && currentProject.canManage && currentProject.columns.length > 0) {
+          // Cria direto um card na primeira coluna (apenas admins)
           currentProject.columns[0].cards.push({
             id: 'card_' + Math.random().toString(36).substring(2, 9),
             content: `Imagem colada:\n${data.markdown}`,

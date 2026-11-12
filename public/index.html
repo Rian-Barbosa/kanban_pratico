@@ -100,60 +100,100 @@
     </div>
   </div>
 
-  <!-- Modal de Novo / Editar Card -->
+  <!-- Modal de Novo / Editar Card (2 Colunas: Esquerda Detalhes/Edição, Direita Comentários) -->
   <div class="modal-overlay" id="card-modal" style="display: none;">
-    <div class="modal-content">
-      <h3 id="card-modal-title" style="margin-bottom: 12px; font-size: 1.1rem;">Novo Item</h3>
-      <div class="form-group">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <label style="margin-bottom: 0;">Conteúdo</label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <div class="editor-view-toggle">
-              <button type="button" class="view-toggle-btn active" id="btn-mode-live" onclick="switchEditorMode('live')" title="Modo Visual (Edição rica em tempo real estilo Obsidian)">✨ Visual</button>
-              <button type="button" class="view-toggle-btn" id="btn-mode-raw" onclick="switchEditorMode('raw')" title="Modo Texto Puro (Código Markdown)">📄 Texto Puro</button>
+    <div class="modal-content card-modal-wide">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 id="card-modal-title" style="font-size: 1.15rem; margin: 0;">Novo Item</h3>
+        <button type="button" class="btn" style="padding: 3px 10px; font-size: 0.85rem;" onclick="closeCardModal()" title="Fechar">✕</button>
+      </div>
+
+      <div class="card-modal-grid" id="card-modal-grid">
+        <!-- Coluna Esquerda: Edição / Detalhes do Card -->
+        <div class="card-modal-left">
+          <div class="form-group">
+            <div id="card-editor-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="margin-bottom: 0;">Conteúdo</label>
+              <div id="card-editor-mode-controls" style="display: flex; gap: 8px; align-items: center;">
+                <div class="editor-view-toggle">
+                  <button type="button" class="view-toggle-btn active" id="btn-mode-live" onclick="switchEditorMode('live')" title="Modo Visual (Edição rica em tempo real estilo Obsidian)">✨ Visual</button>
+                  <button type="button" class="view-toggle-btn" id="btn-mode-raw" onclick="switchEditorMode('raw')" title="Modo Texto Puro (Código Markdown)">📄 Texto Puro</button>
+                </div>
+                <button type="button" class="btn btn-sm" onclick="openCommandPalette()" title="Comandos e Atalhos (Ctrl+/)" style="font-size: 0.75rem; padding: 2px 8px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;">⚡ Comandos (Ctrl+/)</button>
+                <a href="/markdown-guide.html" target="_blank" style="font-size: 0.75rem; color: #2563eb; text-decoration: underline;">📖 Guia</a>
+              </div>
             </div>
-            <button type="button" class="btn btn-sm" onclick="openCommandPalette()" title="Comandos e Atalhos (Ctrl+/)" style="font-size: 0.75rem; padding: 2px 8px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;">⚡ Comandos (Ctrl+/)</button>
-            <a href="/markdown-guide.html" target="_blank" style="font-size: 0.75rem; color: #2563eb; text-decoration: underline;">📖 Guia</a>
+            
+            <!-- Editor com Suporte a Visual e Texto Puro -->
+            <div id="card-editor-wrapper" class="editor-mode-live">
+              <!-- Modo Visual: Área interativa real que renderiza as tags (como no Obsidian) -->
+              <div id="card-content-visual" class="editor-visual-block" contenteditable="true" spellcheck="true" placeholder="Escreva em Markdown... (ex: digite '- [ ] ' ou use Alt+L para checklist)"></div>
+              
+              <!-- Modo Texto Puro: Textarea tradicional com as tags em código puro -->
+              <textarea id="card-content-input" class="form-control editor-textarea" rows="6" placeholder="Escreva em Markdown puro... Suporta checklists (- [ ]), ==destaque==, tags (#tag), atalhos e Ctrl+V para colar imagens"></textarea>
+            </div>
+
+            <!-- Visualização Somente Leitura para Colaborador Comum -->
+            <div id="card-content-readonly" class="card-readonly-box card-markdown" style="display: none;"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Responsáveis <span id="card-assignees-hint">(Clique para selecionar um ou mais)</span></label>
+            <div id="card-assignees-container" class="assignees-checkbox-container">
+              <!-- Chips de responsáveis gerados dinamicamente -->
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label>Urgência</label>
+              <select id="card-urgency-select" class="form-control">
+                <option value="">Sem urgência</option>
+                <option value="alta">🔺 Alta</option>
+                <option value="media">⏳ Média</option>
+                <option value="baixa">🌱 Baixa</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Prazo</label>
+              <input type="date" id="card-date-input" class="form-control" max="9999-12-31" />
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+            <button type="button" class="btn" id="cancel-card-btn" onclick="closeCardModal()">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="save-card-btn" onclick="saveCardAction()">Salvar Item</button>
           </div>
         </div>
-        
-        <!-- Editor com Suporte a Visual e Texto Puro -->
-        <div id="card-editor-wrapper" class="editor-mode-live">
-          <!-- Modo Visual: Área interativa real que renderiza as tags (como no Obsidian) -->
-          <div id="card-content-visual" class="editor-visual-block" contenteditable="true" spellcheck="true" placeholder="Escreva em Markdown... (ex: digite '- [ ] ' ou use Alt+L para checklist)"></div>
-          
-          <!-- Modo Texto Puro: Textarea tradicional com as tags em código puro -->
-          <textarea id="card-content-input" class="form-control editor-textarea" rows="6" placeholder="Escreva em Markdown puro... Suporta checklists (- [ ]), ==destaque==, tags (#tag), atalhos e Ctrl+V para colar imagens"></textarea>
-        </div>
-      </div>
 
-      <div class="form-group">
-        <label>Responsáveis (Clique para selecionar um ou mais)</label>
-        <div id="card-assignees-container" class="assignees-checkbox-container">
-          <!-- Chips de responsáveis gerados dinamicamente -->
-        </div>
-      </div>
+        <!-- Coluna Direita: Comentários (Estilo Trello) -->
+        <div class="card-modal-right" id="card-comments-section">
+          <div class="comments-section-header">
+            <span>💬 Comentários</span>
+            <span id="comments-count-badge" class="access-role-badge">0</span>
+          </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-        <div class="form-group">
-          <label>Urgência</label>
-          <select id="card-urgency-select" class="form-control">
-            <option value="">Sem urgência</option>
-            <option value="alta">🔺 Alta</option>
-            <option value="media">⏳ Média</option>
-            <option value="baixa">🌱 Baixa</option>
-          </select>
-        </div>
+          <div id="comments-new-card-notice" style="display: none; font-size: 0.82rem; color: var(--text-muted); padding: 12px; background: #fbfbfa; border: 1px dashed var(--border-active); border-radius: 8px; text-align: center;">
+            Salve o item primeiro para poder adicionar comentários.
+          </div>
 
-        <div class="form-group">
-          <label>Prazo</label>
-          <input type="date" id="card-date-input" class="form-control" />
-        </div>
-      </div>
+          <div id="comment-composer-box" class="comment-composer-box">
+            <div id="comment-content-visual" class="editor-visual-block comment-visual-editor" contenteditable="true" spellcheck="true" placeholder="Escreva um comentário... (Markdown visual, Tab, ou Ctrl+V para colar imagem)"></div>
+            <div class="comment-composer-actions">
+              <label class="btn" style="font-size: 0.78rem; padding: 4px 10px; cursor: pointer;" title="Anexar imagem ao comentário">
+                📎 Imagem
+                <input type="file" id="comment-image-input" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;" onchange="handleCommentImageUpload(event)" />
+              </label>
+              <button type="button" class="btn btn-primary" id="submit-comment-btn" onclick="submitCardComment()" style="font-size: 0.8rem; padding: 5px 14px;">Comentar</button>
+            </div>
+            <div id="comment-error" style="display: none; background: #fee2e2; color: #991b1b; padding: 6px 10px; border-radius: 6px; font-size: 0.78rem; margin-top: 6px;"></div>
+          </div>
 
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-        <button type="button" class="btn" onclick="closeCardModal()">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="save-card-btn" onclick="saveCardAction()">Salvar Item</button>
+          <div id="card-comments-list" class="card-comments-list">
+            <!-- Comentários renderizados dinamicamente -->
+          </div>
+        </div>
       </div>
     </div>
   </div>

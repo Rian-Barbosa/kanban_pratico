@@ -23,6 +23,20 @@ function sanitizeUrl(url) {
   return '#';
 }
 
+export function buildAttachmentImageUrl(rawPath) {
+  const segments = String(rawPath || '')
+    .split('/')
+    .map(s => s.trim().replace(/[^a-zA-Z0-9_.-]/g, ''))
+    .filter(s => s && s !== '.' && s !== '..');
+  if (segments.length >= 2) {
+    return `/attachments/${encodeURIComponent(segments[0])}/${encodeURIComponent(segments[1])}`;
+  }
+  if (segments.length === 1) {
+    return `/attachments/${encodeURIComponent(segments[0])}`;
+  }
+  return '';
+}
+
 /**
  * Renderizador de Markdown Estendido para cards do Kanban.
  * Suporta:
@@ -49,28 +63,40 @@ export function renderCardMarkdown(rawText) {
   // 2. Escapa caracteres perigosos (XSS guard)
   let html = escapeHtml(text);
 
+  // Tokens protegidos para que negrito/itálico nunca corrompam URLs, nomes de arquivos ou código
+  const protectedTokens = [];
+  const protect = (snippet) => {
+    const key = `@@MDTOK_${protectedTokens.length}@@`;
+    protectedTokens.push(snippet);
+    return key;
+  };
+
   // 3. Fenced Code Blocks (```linguagem ... ```)
   html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    return `<pre class="md-code-block"><code class="lang-${lang}">${code.trim()}</code></pre>`;
+    return protect(`<pre class="md-code-block"><code class="lang-${lang}">${code.trim()}</code></pre>`);
   });
 
   // 4. Inline Code (`código`)
-  html = html.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+  html = html.replace(/`([^`\n]+)`/g, (match, code) => {
+    return protect(`<code class="md-inline-code">${code}</code>`);
+  });
 
-  // 5. Anexos e imagens com redimensionamento do Obsidian ![[imagem.png]] ou ![[imagem.png|300]]
+  // 5. Anexos e imagens com redimensionamento do Obsidian ![[imagem.png]] ou ![[projeto/imagem.png|300]]
   html = html.replace(/!\[\[(.*?)\]\]/g, (match, inner) => {
     const parts = inner.split('|');
-    const filename = parts[0].trim().replace(/[<>:"/\\|?*]/g, '');
-// Validação estrita de número para largura de imagem
+    const imgUrl = buildAttachmentImageUrl(parts[0]);
+    if (!imgUrl) return '';
+    const altText = parts[0].trim().split('/').pop() || 'imagem';
+    // Validação estrita de número para largura de imagem
     const cleanWidth = parts[1] && /^\d+$/.test(parts[1].trim()) ? parseInt(parts[1].trim(), 10) : null;
     const width = cleanWidth ? `style="max-width: ${cleanWidth}px;"` : '';
-    return `<img src="/attachments/${encodeURIComponent(filename)}" alt="${escapeHtml(filename)}" class="md-img" ${width} loading="lazy" />`;
+    return protect(`<img src="${imgUrl}" alt="${escapeHtml(altText)}" class="md-img" ${width} loading="lazy" />`);
   });
 
   // 6. Imagens normais em markdown: ![alt](/attachments/...)
   html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (match, alt, url) => {
     const safeUrl = sanitizeUrl(url);
-    return `<img src="${safeUrl}" alt="${alt}" class="md-img" loading="lazy" />`;
+    return protect(`<img src="${safeUrl}" alt="${alt}" class="md-img" loading="lazy" />`);
   });
 
   // 7. Wikilinks [[Nota]] ou [[Nota|Texto Exibido]] - clicável para abrir projeto ou nota
@@ -78,13 +104,13 @@ export function renderCardMarkdown(rawText) {
     const parts = inner.split('|');
     const target = parts[0].trim().replace(/[<>'"&]/g, '');
     const display = parts[1] ? parts[1].trim().replace(/[<>'"&]/g, '') : target;
-    return `<span class="md-wikilink" data-target="${escapeHtml(target)}" onclick="window.handleWikilinkClick(event, this)" title="Abrir projeto / nota: ${target}">📄 ${display}</span>`;
+    return protect(`<span class="md-wikilink" data-target="${escapeHtml(target)}" onclick="window.handleWikilinkClick(event, this)" title="Abrir projeto / nota: ${target}">📄 ${display}</span>`);
   });
 
   // 8. Links externos seguros: [texto](url)
   html = html.replace(/\[(.*?)\]\((.*?)\)/g, (match, linkText, url) => {
     const safeUrl = sanitizeUrl(url);
-    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="md-link">${linkText}</a>`;
+    return protect(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="md-link">${linkText}</a>`);
   });
 
   // 9. Destaque do Obsidian ==texto destacado==
@@ -100,6 +126,9 @@ export function renderCardMarkdown(rawText) {
     .replace(/__(.*?)__/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/_([^\s_].*?[^\s_])_/g, '<em>$1</em>');
+
+  // Restaura tokens protegidos
+  html = html.replace(/@@MDTOK_(\d+)@@/g, (_, idx) => protectedTokens[Number(idx)] || '');
 
   // 12. Processamento Linha a Linha (Listas, Checklists, Cabeçalhos, Callouts e Citações)
   const lines = html.split('\n');

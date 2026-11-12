@@ -841,6 +841,40 @@ header.board-header {
   color: #991b1b;
 }
 
+/* Exibir ícones de editar (lápis) e excluir (lixeira) apenas no hover do objeto relacionado */
+#project-header-info #rename-project-btn,
+#project-header-info #delete-project-btn,
+.workspace-selector-box #ws-rename-btn,
+.workspace-selector-box #ws-delete-btn,
+.column-header .card-action-btn,
+.comment-item .card-action-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+#project-header-info:hover #rename-project-btn,
+#project-header-info:hover #delete-project-btn,
+.workspace-selector-box:hover #ws-rename-btn,
+.workspace-selector-box:hover #ws-delete-btn,
+.kanban-column:hover .column-header .card-action-btn,
+.comment-item:hover .card-action-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  #project-header-info #rename-project-btn,
+  #project-header-info #delete-project-btn,
+  .workspace-selector-box #ws-rename-btn,
+  .workspace-selector-box #ws-delete-btn,
+  .column-header .card-action-btn,
+  .comment-item .card-action-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Visualizador de Imagem (Lightbox / Obsidian-like) */
 .lightbox-overlay {
   position: fixed;
@@ -1272,6 +1306,170 @@ header.board-header {
 }
 #card-editor-wrapper.editor-mode-raw .editor-visual-block {
   display: none !important;
+}
+
+/* Modal de Card em 2 Colunas (Esquerda: Detalhes/Edição, Direita: Comentários) */
+.modal-content.card-modal-wide {
+  max-width: 960px;
+  width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-modal-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 24px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.card-modal-left {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.card-modal-right {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-light);
+  padding-left: 20px;
+  min-height: 0;
+  max-height: 74vh;
+}
+
+.card-readonly-box {
+  background: #fbfbfa;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 110px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.comments-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.92rem;
+  margin-bottom: 10px;
+}
+
+.comment-composer-box {
+  margin-bottom: 12px;
+}
+
+.comment-visual-editor {
+  min-height: 78px !important;
+  max-height: 160px !important;
+  font-size: 0.86rem !important;
+  padding: 8px 10px !important;
+}
+
+.comment-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.card-comments-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.comment-item {
+  background: #fbfbfa;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.comment-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.comment-author-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.comment-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-weight: 700;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.comment-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.comment-body {
+  font-size: 0.84rem;
+}
+
+.badge-comment-link {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+
+.badge-comment-link:hover {
+  filter: brightness(0.93);
+  transform: translateY(-1px);
+}
+
+.md-attachment-preview {
+  display: inline-block;
+  margin: 4px 0;
+  vertical-align: middle;
+  max-width: 100%;
+}
+
+.md-visual-img {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  object-fit: contain;
+  background: #ffffff;
+}
+
+@media (max-width: 820px) {
+  .card-modal-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .card-modal-right {
+    border-left: none;
+    border-top: 1px solid var(--border-light);
+    padding-left: 0;
+    padding-top: 16px;
+    max-height: none;
+  }
 }
 
 

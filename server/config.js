@@ -43,6 +43,7 @@ export const CONFIG = {
   SESSION_SECRET: getOrGenerateSessionSecret(),
   VAULTS_DIR: path.join(DATA_DIR, 'vaults'),
   ATTACHMENTS_DIR: path.join(DATA_DIR, 'attachments'),
+  COMMENTS_DIR: path.join(DATA_DIR, 'comments'),
   USERS_FILE: path.join(DATA_DIR, 'users.json'),
   WORKSPACES_FILE: path.join(DATA_DIR, 'workspaces.json'),
   COLLABORATORS_FILE: path.join(DATA_DIR, 'collaborators.json'),

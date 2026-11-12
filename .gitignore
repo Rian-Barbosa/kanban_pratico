@@ -35,6 +35,7 @@ data/vaults/*
 !data/vaults/.gitkeep
 data/attachments/*
 !data/attachments/.gitkeep
+data/comments/*
 
 # IDEs, caches e arquivos de sistema
 .vscode/

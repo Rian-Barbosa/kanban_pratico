@@ -31,12 +31,14 @@ export function parseMarkdownKanban(rawMarkdown) {
   const lines = content.split('\n');
   const columns = [];
   let currentColumn = null;
+  let currentCard = null;
 
   for (let line of lines) {
     const trimmed = line.trim();
 
     // Identifica colunas: cabeçalhos ## Nome da Coluna (com metadado opcional de cor)
     if (trimmed.startsWith('## ')) {
+      currentCard = null;
       let title = trimmed.replace(/^##\s+/, '').trim();
       let color = null;
       const colorMatch = title.match(/\s*<!--\s*color:\s*([^>\s]+)\s*-->\s*$/i);
@@ -54,17 +56,25 @@ export function parseMarkdownKanban(rawMarkdown) {
       continue;
     }
 
-    // Identifica itens/cards: - [ ] ou - [x]
-    if (currentColumn && (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]'))) {
+    // Identifica itens/cards no nível raiz (sem indentação): - [ ] ou - [x]
+    if (currentColumn && !/^[\t ]/.test(line) && (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]'))) {
       const completed = trimmed.startsWith('- [x]');
       let cardText = trimmed.replace(/^- \[[ x]\]\s*/, '').trim();
 
-      // Extrai data: 📅 YYYY-MM-DD
+      // Extrai ID persistente opcional: <!-- id:card_xxx -->
+      let cardId = null;
+      const idMatch = cardText.match(/\s*<!--\s*id:\s*([a-zA-Z0-9_-]+)\s*-->\s*$/i);
+      if (idMatch) {
+        cardId = idMatch[1];
+        cardText = cardText.replace(/\s*<!--\s*id:\s*([a-zA-Z0-9_-]+)\s*-->\s*$/i, '').trim();
+      }
+
+      // Extrai data: 📅 YYYY-MM-DD (suporta 4 ou mais dígitos de ano)
       let dueDate = null;
-      const dateMatch = cardText.match(/📅\s*(\d{4}-\d{2}-\d{2})/);
+      const dateMatch = cardText.match(/📅\s*(\d{4,}-\d{2}-\d{2})/);
       if (dateMatch) {
         dueDate = dateMatch[1];
-        cardText = cardText.replace(/📅\s*(\d{4}-\d{2}-\d{2})/, '').trim();
+        cardText = cardText.replace(/📅\s*(\d{4,}-\d{2}-\d{2})/, '').trim();
       }
 
       // Extrai múltiplos responsáveis: @(Nome) ou @Nome
@@ -94,14 +104,22 @@ export function parseMarkdownKanban(rawMarkdown) {
         cardText = cardText.replace(/🌱/g, '').replace(/#baixa/gi, '').trim();
       }
 
-      currentColumn.cards.push({
-        id: 'card_' + crypto.randomUUID().slice(0, 8),
+      currentCard = {
+        id: cardId || 'card_' + crypto.randomUUID().slice(0, 8),
         content: cardText,
         urgency,
         dueDate,
         assignees, // array de nomes de responsáveis
         completed
-      });
+      };
+      currentColumn.cards.push(currentCard);
+      continue;
+    }
+
+    // Linhas de continuação de um card multi-linha (indentadas com 2 espaços)
+    if (currentColumn && currentCard && line.startsWith('  ')) {
+      const contLine = line.slice(2);
+      currentCard.content = currentCard.content ? `${currentCard.content}\n${contLine}` : contLine;
     }
   }
 
@@ -147,25 +165,31 @@ export function serializeMarkdownKanban(data) {
     mdContent += `## ${col.title}${colorSuffix}\n`;
     for (const card of col.cards || []) {
       const check = card.completed ? '- [x]' : '- [ ]';
-      let text = card.content || '';
+      const contentLines = String(card.content || '').split('\n');
+      let firstLine = contentLines[0] || '';
 
       if (card.dueDate) {
-        text += ` 📅 ${card.dueDate}`;
+        firstLine += ` 📅 ${card.dueDate}`;
       }
 
       if (Array.isArray(card.assignees) && card.assignees.length > 0) {
         card.assignees.forEach(name => {
-          text += ` @(${name})`;
+          firstLine += ` @(${name})`;
         });
       } else if (card.assignee) {
-        text += ` @(${card.assignee})`;
+        firstLine += ` @(${card.assignee})`;
       }
 
-      if (card.urgency === 'alta') text += ' 🔺';
-      else if (card.urgency === 'media') text += ' ⏳';
-      else if (card.urgency === 'baixa') text += ' 🌱';
+      if (card.urgency === 'alta') firstLine += ' 🔺';
+      else if (card.urgency === 'media') firstLine += ' ⏳';
+      else if (card.urgency === 'baixa') firstLine += ' 🌱';
 
-      mdContent += `${check} ${text}\n`;
+      const safeCardId = sanitizeIdToken(card.id) || ('card_' + crypto.randomUUID().slice(0, 8));
+      mdContent += `${check} ${firstLine} <!-- id:${safeCardId} -->\n`;
+
+      for (let i = 1; i < contentLines.length; i++) {
+        mdContent += `  ${contentLines[i]}\n`;
+      }
     }
     mdContent += '\n';
   }
@@ -241,23 +265,67 @@ export function deleteProject(id) {
 
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
+    const commentsPath = getCommentsFilePath(id);
+    if (fs.existsSync(commentsPath)) {
+      fs.unlinkSync(commentsPath);
+    }
+    const safeProjId = sanitizeIdToken(id);
+    if (safeProjId) {
+      const attachDir = path.join(CONFIG.ATTACHMENTS_DIR, safeProjId);
+      if (fs.existsSync(attachDir)) {
+        fs.rmSync(attachDir, { recursive: true, force: true });
+      }
+    }
     return true;
   }
   return false;
 }
 
 /**
- * Renomeia um projeto (.md e frontmatter).
+ * Renomeia um projeto (.md, frontmatter, comentários e pasta de anexos).
  */
 export function renameProject(id, newTitle) {
   const project = loadProject(id);
   if (!project) return null;
 
   project.title = newTitle;
-  
-  // Novo ID amigável
   const newId = newTitle.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'projeto';
-  
+
+  if (newId !== id) {
+    const safeOldId = sanitizeIdToken(id);
+    const safeNewId = sanitizeIdToken(newId);
+
+    // Atualiza referências de anexos nos cards
+    if (safeOldId && safeNewId) {
+      for (const col of project.columns || []) {
+        for (const card of col.cards || []) {
+          if (typeof card.content === 'string') {
+            card.content = card.content.replaceAll(`![[${safeOldId}/`, `![[${safeNewId}/`);
+          }
+        }
+      }
+
+      // Move pasta de anexos antes de excluir o projeto antigo
+      const oldAttachDir = path.join(CONFIG.ATTACHMENTS_DIR, safeOldId);
+      const newAttachDir = path.join(CONFIG.ATTACHMENTS_DIR, safeNewId);
+      if (fs.existsSync(oldAttachDir) && !fs.existsSync(newAttachDir)) {
+        fs.renameSync(oldAttachDir, newAttachDir);
+      }
+    }
+
+    // Move arquivo de comentários e atualiza referências
+    const oldCommentsPath = getCommentsFilePath(id);
+    const newCommentsPath = getCommentsFilePath(newId);
+    if (fs.existsSync(oldCommentsPath) && !fs.existsSync(newCommentsPath)) {
+      let rawComments = fs.readFileSync(oldCommentsPath, 'utf-8');
+      if (safeOldId && safeNewId) {
+        rawComments = rawComments.replaceAll(`![[${safeOldId}/`, `![[${safeNewId}/`);
+      }
+      fs.writeFileSync(newCommentsPath, rawComments, 'utf-8');
+      fs.unlinkSync(oldCommentsPath);
+    }
+  }
+
   // Salva no novo arquivo
   saveProject(newId, project);
 
@@ -418,5 +486,94 @@ export function canManageProject(projectMeta, ws, username) {
   const role = getUserWorkspaceRole(ws, username);
   if (role === 'owner' || role === 'admin') return true;
   return Boolean(projectMeta.owner && projectMeta.owner.toLowerCase() === username.toLowerCase());
+}
+
+/**
+ * Gestão de Comentários por Card (data/comments/<projectId>.json)
+ */
+function getCommentsFilePath(projectId) {
+  const safeName = sanitizeFilename(projectId).replace(/\.md$/, '.json');
+  return path.join(CONFIG.COMMENTS_DIR, safeName);
+}
+
+function readProjectCommentsMap(projectId) {
+  const filePath = getCommentsFilePath(projectId);
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeProjectCommentsMap(projectId, map) {
+  if (!fs.existsSync(CONFIG.COMMENTS_DIR)) {
+    fs.mkdirSync(CONFIG.COMMENTS_DIR, { recursive: true });
+  }
+  const filePath = getCommentsFilePath(projectId);
+  fs.writeFileSync(filePath, JSON.stringify(map, null, 2), 'utf-8');
+}
+
+export function getProjectCommentCounts(projectId) {
+  const map = readProjectCommentsMap(projectId);
+  const counts = {};
+  for (const [cardId, list] of Object.entries(map)) {
+    if (Array.isArray(list) && list.length > 0) {
+      counts[cardId] = list.length;
+    }
+  }
+  return counts;
+}
+
+export function listCardComments(projectId, cardId) {
+  const cleanCardId = sanitizeIdToken(cardId);
+  if (!cleanCardId) return [];
+  const map = readProjectCommentsMap(projectId);
+  return Array.isArray(map[cleanCardId]) ? map[cleanCardId] : [];
+}
+
+export function addCardComment(projectId, cardId, author, content) {
+  const cleanCardId = sanitizeIdToken(cardId);
+  if (!cleanCardId) return null;
+  const map = readProjectCommentsMap(projectId);
+  if (!Array.isArray(map[cleanCardId])) {
+    map[cleanCardId] = [];
+  }
+  const comment = {
+    id: 'cmt_' + crypto.randomUUID().slice(0, 8),
+    author,
+    content,
+    createdAt: new Date().toISOString()
+  };
+  map[cleanCardId].push(comment);
+  writeProjectCommentsMap(projectId, map);
+  return comment;
+}
+
+export function deleteCardComment(projectId, cardId, commentId, username, canManage) {
+  const cleanCardId = sanitizeIdToken(cardId);
+  const cleanCommentId = sanitizeIdToken(commentId);
+  if (!cleanCardId || !cleanCommentId) {
+    return { ok: false, status: 400, error: 'Identificador inválido.' };
+  }
+
+  const map = readProjectCommentsMap(projectId);
+  const list = Array.isArray(map[cleanCardId]) ? map[cleanCardId] : [];
+  const target = list.find(c => c.id === cleanCommentId);
+  if (!target) {
+    return { ok: false, status: 404, error: 'Comentário não encontrado.' };
+  }
+
+  if (!canManage) {
+    return { ok: false, status: 403, error: 'Apenas administradores do workspace ou do projeto podem excluir comentários.' };
+  }
+
+  map[cleanCardId] = list.filter(c => c.id !== cleanCommentId);
+  if (map[cleanCardId].length === 0) {
+    delete map[cleanCardId];
+  }
+  writeProjectCommentsMap(projectId, map);
+  return { ok: true };
 }
 

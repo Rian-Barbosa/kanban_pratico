@@ -51,14 +51,7 @@ await fastify.register(fastifyStatic, {
   prefix: '/'
 });
 
-// Servir diretório de anexos
-await fastify.register(fastifyStatic, {
-  root: CONFIG.ATTACHMENTS_DIR,
-  prefix: '/attachments/',
-  decorateReply: false
-});
-
-// Registrar rotas da API
+// Registrar rotas da API (anexos são servidos por rotas autenticadas)
 await fastify.register(apiRoutes);
 
 // Iniciar servidor

@@ -10,11 +10,11 @@
   <div id="app-container">
     <!-- Sidebar -->
     <aside id="sidebar">
-      <div class="brand" title="Clique para alterar o nome do app">
+      <div class="brand" id="brand-header">
         <div class="brand-title-wrap" onclick="promptChangeAppName()">
           <span id="app-brand-name">📋 Kanban</span>
         </div>
-        <button class="card-action-btn brand-edit-btn" onclick="promptChangeAppName()" title="Alterar Nome do App">✏️</button>
+        <button class="card-action-btn brand-edit-btn" id="brand-edit-btn" style="display: none;" onclick="promptChangeAppName()" title="Alterar Nome do App">✏️</button>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -63,7 +63,7 @@
   <!-- Modal de Login -->
   <div class="modal-overlay" id="login-modal" style="display: none;">
     <div class="modal-content">
-      <h2 style="margin-bottom: 8px; font-size: 1.25rem;">🔐 Acesso ao Kanban</h2>
+      <h2 style="margin-bottom: 8px; font-size: 1.25rem;">🔐 Acesso ao <span id="login-app-name">Kanban</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px;">
         Entre com suas credenciais para continuar.
       </p>
@@ -178,6 +178,11 @@
         <label id="project-input-label">Nome do Projeto</label>
         <input type="text" id="project-name-input" class="form-control" placeholder="Ex: Roadmap 2026, Finanças..." required />
       </div>
+      <div class="form-group" id="project-input-password-group" style="display: none; margin-top: 12px;">
+        <label>Senha do Administrador</label>
+        <input type="password" id="project-input-password" class="form-control" placeholder="Digite sua senha para confirmar" />
+      </div>
+      <div id="project-input-error" style="display: none; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-size: 0.82rem; margin-top: 10px;"></div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
         <button type="button" class="btn" onclick="closeProjectInputModal()">Cancelar</button>
         <button type="button" class="btn btn-primary" id="save-project-input-btn" onclick="saveProjectInputAction()">Salvar</button>

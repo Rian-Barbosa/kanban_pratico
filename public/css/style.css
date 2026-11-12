@@ -77,7 +77,7 @@ body {
   transition: background 0.15s ease;
 }
 
-.brand:hover {
+.brand.is-admin:hover {
   background-color: rgba(55, 53, 47, 0.05);
 }
 
@@ -85,8 +85,11 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
   flex: 1;
+}
+
+.brand.is-admin .brand-title-wrap {
+  cursor: pointer;
 }
 
 .brand-edit-btn {

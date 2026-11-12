@@ -1,12 +1,48 @@
 import { renderCardMarkdown, escapeHtml } from './markdown.js';
 
 let currentProject = null;
+let currentUser = null;
 let activeDraggingCard = null;
 let dragSourceColId = null;
 let activeDraggingColId = null;
 
+function isCurrentUserAdmin() {
+  return Boolean(currentUser && typeof currentUser.username === 'string' && currentUser.username.toLowerCase() === 'admin');
+}
+
+function extractPlainAppName(rawName) {
+  const clean = (rawName || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  return clean || 'Kanban';
+}
+
+function applyAppNameUI(rawName) {
+  const brandName = (rawName || '').trim() || '📋 Kanban';
+  const plainName = extractPlainAppName(brandName);
+
+  const brandEl = document.getElementById('app-brand-name');
+  if (brandEl) brandEl.textContent = brandName;
+
+  const loginAppEl = document.getElementById('login-app-name');
+  if (loginAppEl) loginAppEl.textContent = plainName;
+
+  document.title = plainName;
+}
+
+function updateAdminBrandUI() {
+  const isAdmin = isCurrentUserAdmin();
+  const brandHeader = document.getElementById('brand-header');
+  const brandEditBtn = document.getElementById('brand-edit-btn');
+  if (brandHeader) {
+    brandHeader.classList.toggle('is-admin', isAdmin);
+    brandHeader.title = isAdmin ? 'Clique para alterar o nome do app' : '';
+  }
+  if (brandEditBtn) {
+    brandEditBtn.style.display = isAdmin ? '' : 'none';
+  }
+}
+
 export async function initKanban() {
-  loadCustomAppName();
+  await loadCustomAppName();
   await checkAuth();
   await loadCollaborators();
   await loadProjectList();
@@ -15,20 +51,20 @@ export async function initKanban() {
 }
 
 async function loadCustomAppName() {
+  let appName = null;
   try {
     const res = await fetch('/api/settings');
     if (res.ok) {
       const data = await res.json();
       if (data.appName) {
-        localStorage.setItem('kanban_custom_app_name', data.appName);
+        appName = data.appName;
+        localStorage.setItem('kanban_custom_app_name', appName);
       }
     }
   } catch {}
 
-  const customName = localStorage.getItem('kanban_custom_app_name') || '📋 Kanban';
-  const brandEl = document.getElementById('app-brand-name');
-  if (brandEl) brandEl.textContent = customName;
-  document.title = customName.replace(/[^\w\s-]/gi, '').trim() || 'Kanban';
+  const finalName = appName || localStorage.getItem('kanban_custom_app_name') || '📋 Kanban';
+  applyAppNameUI(finalName);
 }
 
 // Sistema assíncrono de Confirmação via Modal (substitui window.confirm)
@@ -54,13 +90,30 @@ window.closeGenericConfirmModal = function (confirmed) {
 // Modal de Criação / Edição de Projeto e Nome do App (substitui window.prompt)
 let projectInputMode = null; // 'create_project' | 'rename_project' | 'rename_app'
 
+function resetProjectInputModalExtras() {
+  const pwdGroup = document.getElementById('project-input-password-group');
+  const pwdInput = document.getElementById('project-input-password');
+  const errEl = document.getElementById('project-input-error');
+  if (pwdGroup) pwdGroup.style.display = 'none';
+  if (pwdInput) pwdInput.value = '';
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+}
+
 window.promptChangeAppName = function () {
+  if (!isCurrentUserAdmin()) return;
+
   projectInputMode = 'rename_app';
   const current = localStorage.getItem('kanban_custom_app_name') || '📋 Kanban';
   document.getElementById('project-input-modal-title').textContent = 'Nome da Aplicação';
   document.getElementById('project-input-label').textContent = 'Personalizar Título do Kanban';
   document.getElementById('project-name-input').value = current;
   document.getElementById('save-project-input-btn').textContent = 'Salvar Nome';
+  resetProjectInputModalExtras();
+  const pwdGroup = document.getElementById('project-input-password-group');
+  if (pwdGroup) pwdGroup.style.display = 'block';
   document.getElementById('project-input-modal').style.display = 'flex';
   document.getElementById('project-name-input').focus();
 };
@@ -72,6 +125,7 @@ window.openNewProjectPrompt = function () {
   document.getElementById('project-name-input').value = '';
   document.getElementById('project-name-input').placeholder = 'Ex: Roadmap 2026, Finanças...';
   document.getElementById('save-project-input-btn').textContent = 'Criar Projeto';
+  resetProjectInputModalExtras();
   document.getElementById('project-input-modal').style.display = 'flex';
   document.getElementById('project-name-input').focus();
 };
@@ -83,35 +137,65 @@ window.promptRenameCurrentProject = function () {
   document.getElementById('project-input-label').textContent = 'Novo Nome do Projeto';
   document.getElementById('project-name-input').value = currentProject.title;
   document.getElementById('save-project-input-btn').textContent = 'Salvar Alteração';
+  resetProjectInputModalExtras();
   document.getElementById('project-input-modal').style.display = 'flex';
   document.getElementById('project-name-input').focus();
 };
 
 window.closeProjectInputModal = function () {
   document.getElementById('project-input-modal').style.display = 'none';
+  resetProjectInputModalExtras();
   projectInputMode = null;
 };
 
 window.saveProjectInputAction = async function () {
   const val = document.getElementById('project-name-input').value.trim();
+  const errEl = document.getElementById('project-input-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
   if (!val) return;
 
   if (projectInputMode === 'rename_app') {
-    localStorage.setItem('kanban_custom_app_name', val);
-    const brandEl = document.getElementById('app-brand-name');
-    if (brandEl) brandEl.textContent = val;
-    document.title = val.replace(/[^\w\s-]/gi, '').trim() || 'Kanban';
-    
-    // Salva de forma persistente no servidor local (data/settings.json)
+    if (!isCurrentUserAdmin()) return;
+
+    const password = document.getElementById('project-input-password')?.value || '';
+    if (!password) {
+      if (errEl) {
+        errEl.textContent = 'Digite a senha do administrador para confirmar.';
+        errEl.style.display = 'block';
+      }
+      document.getElementById('project-input-password')?.focus();
+      return;
+    }
+
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appName: val })
+        body: JSON.stringify({ appName: val, password })
       });
-    } catch {}
 
-    closeProjectInputModal();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (errEl) {
+          errEl.textContent = data.error || 'Não foi possível atualizar o nome.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+
+      const savedName = data.appName || val;
+      localStorage.setItem('kanban_custom_app_name', savedName);
+      applyAppNameUI(savedName);
+      closeProjectInputModal();
+    } catch {
+      if (errEl) {
+        errEl.textContent = 'Erro de conexão com o servidor.';
+        errEl.style.display = 'block';
+      }
+    }
   } else if (projectInputMode === 'create_project') {
     const res = await fetch('/api/projects', {
       method: 'POST',
@@ -148,8 +232,12 @@ async function checkAuth() {
     const res = await fetch('/api/auth/me');
     const data = await res.json();
     if (!data.authenticated) {
+      currentUser = null;
+      updateAdminBrandUI();
       document.getElementById('login-modal').style.display = 'flex';
     } else {
+      currentUser = data.user;
+      updateAdminBrandUI();
       document.getElementById('login-modal').style.display = 'none';
       document.getElementById('user-display').textContent = data.user.username;
     }
@@ -173,7 +261,13 @@ window.handleLogin = async function (e) {
     });
 
     if (res.ok) {
+      const data = await res.json();
+      currentUser = data.user || { username };
+      document.getElementById('user-display').textContent = currentUser.username;
+      updateAdminBrandUI();
       document.getElementById('login-modal').style.display = 'none';
+      await loadCustomAppName();
+      await loadCollaborators();
       await loadProjectList();
     } else {
       const data = await res.json();

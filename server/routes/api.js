@@ -35,6 +35,12 @@ export default async function apiRoutes(fastify, options) {
     return { authenticated: false };
   });
 
+  // Configurações públicas de branding (necessário antes do login para exibir o nome do app)
+  fastify.get('/api/settings', async () => {
+    const settings = getSettings();
+    return { appName: settings.appName || '📋 Kanban' };
+  });
+
   // --- Rotas Protegidas de Projetos ---
   fastify.register(async function (protectedRoutes) {
     protectedRoutes.addHook('preHandler', async (req, reply) => {
@@ -143,17 +149,28 @@ export default async function apiRoutes(fastify, options) {
       };
     });
 
-    // --- Rotas de Configurações Gerais (Nome do App, etc) ---
-    protectedRoutes.get('/api/settings', async () => {
-      return getSettings();
-    });
-
+    // --- Rotas de Configurações Gerais (Restrito ao Admin com senha) ---
     protectedRoutes.put('/api/settings', async (req, reply) => {
-      const { appName } = req.body || {};
-      if (typeof appName !== 'string') {
-        return reply.code(400).send({ error: 'Configuração inválida.' });
+      const currentUsername = req.session?.user?.username || '';
+      if (currentUsername.toLowerCase() !== 'admin') {
+        return reply.code(403).send({ error: 'Apenas o administrador pode alterar o nome da aplicação.' });
       }
-      return updateSettings({ appName });
+
+      const { appName, password } = req.body || {};
+      if (typeof appName !== 'string' || !appName.trim()) {
+        return reply.code(400).send({ error: 'Nome da aplicação inválido.' });
+      }
+
+      if (typeof password !== 'string' || !password) {
+        return reply.code(400).send({ error: 'A senha do administrador é obrigatória para confirmar.' });
+      }
+
+      const verified = await verifyUser(currentUsername, password);
+      if (!verified) {
+        return reply.code(403).send({ error: 'Senha incorreta. Alteração não autorizada.' });
+      }
+
+      return updateSettings({ appName: appName.trim() });
     });
 
     // --- Rotas de Colaboradores ---

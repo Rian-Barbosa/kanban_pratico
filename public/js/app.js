@@ -318,6 +318,10 @@ export async function loadProjectList() {
   projects.forEach((proj, idx) => {
     const li = document.createElement('li');
     li.className = 'project-item';
+    if (currentProject && currentProject.id === proj.id) {
+      li.classList.add('active');
+    }
+    li.dataset.projectId = proj.id;
     li.textContent = `📋 ${proj.title}`;
     li.onclick = () => selectProject(proj.id);
     listEl.appendChild(li);
@@ -342,10 +346,10 @@ export async function selectProject(id) {
   if (headerActions) headerActions.style.display = 'flex';
   if (titleEl) titleEl.textContent = currentProject.title;
 
-  // Atualiza classe ativa na sidebar
+  // Atualiza classe ativa na sidebar usando comparação exata pelo ID
   const items = document.querySelectorAll('.project-item');
   items.forEach(item => {
-    if (item.textContent.includes(currentProject.title)) {
+    if (item.dataset.projectId === String(currentProject.id)) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');

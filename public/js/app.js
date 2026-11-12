@@ -3,6 +3,7 @@ import { renderCardMarkdown, escapeHtml } from './markdown.js';
 let currentProject = null;
 let activeDraggingCard = null;
 let dragSourceColId = null;
+let activeDraggingColId = null;
 
 export async function initKanban() {
   loadCustomAppName();
@@ -260,7 +261,41 @@ export async function selectProject(id) {
   renderBoard();
 }
 
-const PASTEL_COLUMN_CLASSES = ['col-blue', 'col-amber', 'col-green', 'col-purple', 'col-rose'];
+const PASTEL_COLUMN_CLASSES = ['col-blue', 'col-amber', 'col-green', 'col-purple', 'col-rose', 'col-gray'];
+const COLUMN_COLOR_OPTIONS = [
+  { id: 'col-gray', label: 'Cinza', bg: '#f1f1ef', border: '#b8b8b3' },
+  { id: 'col-blue', label: 'Azul', bg: '#e7f3f8', border: '#6dbbe0' },
+  { id: 'col-amber', label: 'Amarelo', bg: '#fbf3db', border: '#e2bd56' },
+  { id: 'col-green', label: 'Verde', bg: '#edf6f0', border: '#75c48f' },
+  { id: 'col-purple', label: 'Roxo', bg: '#f6f3f9', border: '#b297d6' },
+  { id: 'col-rose', label: 'Rosa', bg: '#fbebf0', border: '#e394ae' }
+];
+
+function applyColumnColor(colEl, colorValue, fallbackIdx = 0) {
+  const validPreset = COLUMN_COLOR_OPTIONS.some(opt => opt.id === colorValue);
+  if (validPreset) {
+    colEl.className = `kanban-column ${colorValue}`;
+    colEl.style.backgroundColor = '';
+    colEl.style.borderColor = '';
+    return;
+  }
+
+  if (typeof colorValue === 'string' && /^#[0-9a-fA-F]{6}$/.test(colorValue.trim())) {
+    const hex = colorValue.trim();
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    colEl.className = 'kanban-column';
+    colEl.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.14)`;
+    colEl.style.borderColor = `rgba(${r}, ${g}, ${b}, 0.48)`;
+    return;
+  }
+
+  const fallbackClass = PASTEL_COLUMN_CLASSES[fallbackIdx % PASTEL_COLUMN_CLASSES.length];
+  colEl.className = `kanban-column ${fallbackClass}`;
+  colEl.style.backgroundColor = '';
+  colEl.style.borderColor = '';
+}
 
 export function renderBoard() {
   const boardEl = document.getElementById('kanban-board');
@@ -269,19 +304,30 @@ export function renderBoard() {
   if (!currentProject || !currentProject.columns) return;
 
   currentProject.columns.forEach((col, idx) => {
-    const colorClass = PASTEL_COLUMN_CLASSES[idx % PASTEL_COLUMN_CLASSES.length];
     const colEl = document.createElement('div');
-    colEl.className = `kanban-column ${colorClass}`;
+    applyColumnColor(colEl, col.color, idx);
     colEl.dataset.colId = col.id;
 
     const safeTitle = escapeHtml(col.title);
     colEl.innerHTML = `
       <div class="column-header">
-        <span class="column-title" style="cursor: pointer;" title="Clique duplo para renomear a lista">
-          ${safeTitle} <span class="card-count">${col.cards.length}</span>
-        </span>
+        <div class="column-title-group">
+          <span class="column-drag-handle" title="Arraste para mover a lista" aria-label="Mover lista">
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+              <circle cx="3.5" cy="3" r="1.35"></circle>
+              <circle cx="8.5" cy="3" r="1.35"></circle>
+              <circle cx="3.5" cy="8" r="1.35"></circle>
+              <circle cx="8.5" cy="8" r="1.35"></circle>
+              <circle cx="3.5" cy="13" r="1.35"></circle>
+              <circle cx="8.5" cy="13" r="1.35"></circle>
+            </svg>
+          </span>
+          <span class="column-title" title="Arraste para mover ou clique duplo para renomear a lista">
+            ${safeTitle} <span class="card-count">${col.cards.length}</span>
+          </span>
+        </div>
         <div style="display: flex; align-items: center; gap: 4px;">
-          <button class="card-action-btn" title="Editar nome da lista" onclick="openEditColumnModal('${col.id}')">✏️</button>
+          <button class="card-action-btn" title="Editar nome e cor da lista" onclick="openEditColumnModal('${col.id}')">✏️</button>
           <button class="card-action-btn delete" title="Excluir lista" onclick="deleteColumn('${col.id}')">🗑️</button>
           <button class="btn" style="padding: 2px 6px; font-size: 0.75rem; margin-left: 2px;" onclick="openNewCardModal('${col.id}')" title="Adicionar Item">+</button>
         </div>
@@ -289,26 +335,99 @@ export function renderBoard() {
       <div class="card-list" data-col-id="${col.id}"></div>
     `;
 
-    // Duplo clique no título da coluna também abre edição
+    const headerEl = colEl.querySelector('.column-header');
     const titleEl = colEl.querySelector('.column-title');
     titleEl.addEventListener('dblclick', () => openEditColumnModal(col.id));
 
+    // Permite arrastar a coluna segurando pelo cabeçalho (sem bloquear botões)
+    headerEl.addEventListener('mousedown', (e) => {
+      if (!e.target.closest('button')) {
+        colEl.draggable = true;
+        document.addEventListener('mouseup', () => {
+          colEl.draggable = false;
+        }, { once: true });
+      }
+    });
+
+    colEl.addEventListener('dragstart', (e) => {
+      if (activeDraggingCard || !colEl.draggable) return;
+      activeDraggingColId = col.id;
+      colEl.classList.add('column-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/column-id', col.id);
+    });
+
+    colEl.addEventListener('dragover', (e) => {
+      if (!activeDraggingColId || activeDraggingColId === col.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = colEl.getBoundingClientRect();
+      const isAfter = e.clientX > rect.left + rect.width / 2;
+      colEl.classList.toggle('drop-after', isAfter);
+      colEl.classList.toggle('drop-before', !isAfter);
+    });
+
+    colEl.addEventListener('dragleave', (e) => {
+      if (!colEl.contains(e.relatedTarget)) {
+        colEl.classList.remove('drop-before', 'drop-after');
+      }
+    });
+
+    colEl.addEventListener('drop', async (e) => {
+      if (!activeDraggingColId) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      colEl.classList.remove('drop-before', 'drop-after');
+      if (activeDraggingColId === col.id) return;
+
+      const sourceIdx = currentProject.columns.findIndex(c => c.id === activeDraggingColId);
+      const targetIdx = currentProject.columns.findIndex(c => c.id === col.id);
+      if (sourceIdx === -1 || targetIdx === -1) return;
+
+      const rect = colEl.getBoundingClientRect();
+      const insertAfter = e.clientX > rect.left + rect.width / 2;
+      let destinationIdx = insertAfter ? targetIdx + 1 : targetIdx;
+      if (sourceIdx < destinationIdx) {
+        destinationIdx--;
+      }
+
+      if (destinationIdx !== sourceIdx) {
+        const [movedCol] = currentProject.columns.splice(sourceIdx, 1);
+        currentProject.columns.splice(destinationIdx, 0, movedCol);
+        activeDraggingColId = null;
+        await syncProject();
+        renderBoard();
+      }
+    });
+
+    colEl.addEventListener('dragend', () => {
+      colEl.draggable = false;
+      colEl.classList.remove('column-dragging');
+      document.querySelectorAll('.kanban-column').forEach(el => {
+        el.classList.remove('drop-before', 'drop-after');
+      });
+      activeDraggingColId = null;
+    });
+
     const cardListEl = colEl.querySelector('.card-list');
 
-    // Drag-and-Drop Handlers para a Coluna
+    // Drag-and-Drop Handlers para Cards dentro da Coluna
     cardListEl.addEventListener('dragover', (e) => {
+      if (!activeDraggingCard) return;
       e.preventDefault();
       cardListEl.style.background = 'rgba(55, 53, 47, 0.05)';
     });
 
     cardListEl.addEventListener('dragleave', () => {
+      if (!activeDraggingCard) return;
       cardListEl.style.background = '';
     });
 
     cardListEl.addEventListener('drop', async (e) => {
+      if (!activeDraggingCard) return;
       e.preventDefault();
       cardListEl.style.background = '';
-      if (!activeDraggingCard) return;
 
       const targetColId = col.id;
       if (dragSourceColId === targetColId) return;
@@ -376,13 +495,15 @@ export function renderBoard() {
 
       // Animação e eventos de Drag
       cardEl.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
         activeDraggingCard = card;
         dragSourceColId = col.id;
         cardEl.classList.add('dragging');
         e.dataTransfer.setData('text/plain', card.id);
       });
 
-      cardEl.addEventListener('dragend', () => {
+      cardEl.addEventListener('dragend', (e) => {
+        e.stopPropagation();
         cardEl.classList.remove('dragging');
         activeDraggingCard = null;
         dragSourceColId = null;
@@ -514,25 +635,75 @@ window.executeDeleteCurrentProject = async function () {
 
 // --- Gestão de Colunas (Listas) ---
 let editingColumnId = null;
+let selectedColumnColor = 'col-blue';
+
+function renderColumnColorPicker(activeColor) {
+  const pickerEl = document.getElementById('column-color-picker');
+  if (!pickerEl) return;
+
+  selectedColumnColor = activeColor || 'col-blue';
+  const isCustomHex = typeof selectedColumnColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(selectedColumnColor);
+
+  pickerEl.innerHTML = '';
+
+  COLUMN_COLOR_OPTIONS.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `color-swatch${selectedColumnColor === opt.id ? ' selected' : ''}`;
+    btn.title = opt.label;
+    btn.style.backgroundColor = opt.bg;
+    btn.style.borderColor = opt.border;
+    btn.addEventListener('click', () => {
+      renderColumnColorPicker(opt.id);
+    });
+    pickerEl.appendChild(btn);
+  });
+
+  // Botão de cor personalizada (Hex via color input)
+  const customWrap = document.createElement('label');
+  customWrap.className = `color-swatch-custom-wrapper${isCustomHex ? ' selected' : ''}`;
+  customWrap.title = 'Escolher cor personalizada';
+  if (isCustomHex) {
+    customWrap.style.backgroundColor = selectedColumnColor;
+    customWrap.style.color = '#ffffff';
+  }
+  customWrap.innerHTML = `🎨<input type="color" id="column-custom-color-input" value="${isCustomHex ? selectedColumnColor : '#6366f1'}" />`;
+
+  const colorInput = customWrap.querySelector('input[type="color"]');
+  colorInput.addEventListener('input', (e) => {
+    selectedColumnColor = e.target.value.toLowerCase();
+    pickerEl.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+    customWrap.classList.add('selected');
+    customWrap.style.backgroundColor = selectedColumnColor;
+  });
+
+  pickerEl.appendChild(customWrap);
+}
 
 window.openNewColumnModal = function () {
   editingColumnId = null;
   document.getElementById('column-modal-title').textContent = 'Nova Lista';
   document.getElementById('save-column-btn').textContent = 'Adicionar Lista';
   document.getElementById('column-title-input').value = '';
+  const defaultNextColor = currentProject && currentProject.columns
+    ? PASTEL_COLUMN_CLASSES[currentProject.columns.length % PASTEL_COLUMN_CLASSES.length]
+    : 'col-blue';
+  renderColumnColorPicker(defaultNextColor);
   document.getElementById('column-modal').style.display = 'flex';
   document.getElementById('column-title-input').focus();
 };
 
 window.openEditColumnModal = function (colId) {
   if (!currentProject) return;
-  const col = currentProject.columns.find(c => c.id === colId);
-  if (!col) return;
+  const idx = currentProject.columns.findIndex(c => c.id === colId);
+  if (idx === -1) return;
+  const col = currentProject.columns[idx];
 
   editingColumnId = colId;
   document.getElementById('column-modal-title').textContent = 'Editar Lista';
   document.getElementById('save-column-btn').textContent = 'Salvar Alterações';
   document.getElementById('column-title-input').value = col.title;
+  renderColumnColorPicker(col.color || PASTEL_COLUMN_CLASSES[idx % PASTEL_COLUMN_CLASSES.length]);
   document.getElementById('column-modal').style.display = 'flex';
   document.getElementById('column-title-input').focus();
 };
@@ -550,11 +721,13 @@ window.saveColumnAction = async function () {
     const col = currentProject.columns.find(c => c.id === editingColumnId);
     if (col) {
       col.title = title;
+      col.color = selectedColumnColor;
     }
   } else {
     currentProject.columns.push({
       id: 'col_' + Math.random().toString(36).substring(2, 9),
       title,
+      color: selectedColumnColor,
       cards: []
     });
   }

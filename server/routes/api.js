@@ -59,9 +59,10 @@ export default async function apiRoutes(fastify, options) {
       const initialData = {
         title,
         columns: [
-          { id: 'col_todo', title: 'A Fazer', cards: [] },
-          { id: 'col_prog', title: 'Em Andamento', cards: [] },
-          { id: 'col_done', title: 'Concluído', cards: [] }
+          { id: 'col_backlog', title: 'Backlog', color: 'col-gray', cards: [] },
+          { id: 'col_todo', title: 'To do', color: 'col-blue', cards: [] },
+          { id: 'col_prog', title: 'In progress', color: 'col-amber', cards: [] },
+          { id: 'col_done', title: 'Done', color: 'col-green', cards: [] }
         ]
       };
 

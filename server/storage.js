@@ -12,6 +12,16 @@ export function sanitizeFilename(name) {
   return clean ? `${clean}.md` : 'projeto-sem-titulo.md';
 }
 
+const DEFAULT_COLUMN_COLORS = ['col-blue', 'col-amber', 'col-green', 'col-purple', 'col-rose', 'col-gray'];
+
+function sanitizeColumnColor(color) {
+  if (typeof color !== 'string') return null;
+  const trimmed = color.trim();
+  if (DEFAULT_COLUMN_COLORS.includes(trimmed)) return trimmed;
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed.toLowerCase();
+  return null;
+}
+
 /**
  * Converte um arquivo .md no formato do Kanban Obsidian para JSON estruturado.
  */
@@ -25,12 +35,19 @@ export function parseMarkdownKanban(rawMarkdown) {
   for (let line of lines) {
     const trimmed = line.trim();
 
-    // Identifica colunas: cabeçalhos ## Nome da Coluna
+    // Identifica colunas: cabeçalhos ## Nome da Coluna (com metadado opcional de cor)
     if (trimmed.startsWith('## ')) {
-      const title = trimmed.replace(/^##\s+/, '').trim();
+      let title = trimmed.replace(/^##\s+/, '').trim();
+      let color = null;
+      const colorMatch = title.match(/\s*<!--\s*color:\s*([^>\s]+)\s*-->\s*$/i);
+      if (colorMatch) {
+        color = sanitizeColumnColor(colorMatch[1]);
+        title = title.replace(/\s*<!--\s*color:\s*([^>\s]+)\s*-->\s*$/i, '').trim();
+      }
       currentColumn = {
         id: 'col_' + crypto.randomUUID().slice(0, 8),
         title,
+        color: color || DEFAULT_COLUMN_COLORS[columns.length % DEFAULT_COLUMN_COLORS.length],
         cards: []
       };
       columns.push(currentColumn);
@@ -107,7 +124,9 @@ export function serializeMarkdownKanban(data) {
   mdContent += '\n';
 
   for (const col of data.columns || []) {
-    mdContent += `## ${col.title}\n`;
+    const safeColor = sanitizeColumnColor(col.color);
+    const colorSuffix = safeColor ? ` <!-- color:${safeColor} -->` : '';
+    mdContent += `## ${col.title}${colorSuffix}\n`;
     for (const card of col.cards || []) {
       const check = card.completed ? '- [x]' : '- [ ]';
       let text = card.content || '';

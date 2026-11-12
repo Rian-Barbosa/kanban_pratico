@@ -77,7 +77,6 @@ export default async function apiRoutes(fastify, options) {
       if (!req.session || !req.session.user) {
         return reply.code(401).send({ error: 'Sessão expirada ou não autenticada.' });
       }
-      ensureDefaultWorkspace();
     });
 
     // --- Rotas de Workspaces ---
@@ -146,9 +145,6 @@ export default async function apiRoutes(fastify, options) {
       const ws = getWorkspace(req.params.id);
       if (!ws) {
         return reply.code(404).send({ error: 'Workspace não encontrado.' });
-      }
-      if (ws.id === 'ws_default') {
-        return reply.code(400).send({ error: 'O workspace padrão Geral não pode ser excluído.' });
       }
       const hasProjects = listProjects().some(p => p.workspace === ws.id);
       if (hasProjects) {
@@ -261,9 +257,9 @@ export default async function apiRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Título é obrigatório.' });
       }
 
-      const ws = getWorkspace(workspaceId || 'ws_default');
+      const ws = getWorkspace(workspaceId);
       if (!ws) {
-        return reply.code(404).send({ error: 'Workspace não encontrado.' });
+        return reply.code(400).send({ error: 'Selecione ou crie um workspace válido primeiro.' });
       }
 
       if (!canManageWorkspace(ws, username)) {

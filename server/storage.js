@@ -337,28 +337,15 @@ export function sanitizeIdToken(value) {
 }
 
 export function ensureDefaultWorkspace() {
-  let data = { workspaces: [] };
-  if (fs.existsSync(CONFIG.WORKSPACES_FILE)) {
-    try {
-      data = JSON.parse(fs.readFileSync(CONFIG.WORKSPACES_FILE, 'utf-8'));
-      if (!Array.isArray(data.workspaces)) data.workspaces = [];
-    } catch {
-      data = { workspaces: [] };
-    }
+  if (!fs.existsSync(CONFIG.WORKSPACES_FILE)) {
+    return [];
   }
-
-  if (!data.workspaces.some(w => w.id === 'ws_default')) {
-    data.workspaces.unshift({
-      id: 'ws_default',
-      name: 'Geral',
-      owner: 'admin',
-      members: [],
-      createdAt: new Date().toISOString()
-    });
-    fs.writeFileSync(CONFIG.WORKSPACES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  try {
+    const data = JSON.parse(fs.readFileSync(CONFIG.WORKSPACES_FILE, 'utf-8'));
+    return Array.isArray(data.workspaces) ? data.workspaces : [];
+  } catch {
+    return [];
   }
-
-  return data.workspaces;
 }
 
 export function listWorkspaces() {
@@ -385,7 +372,7 @@ export function saveWorkspace(workspace) {
 
 export function deleteWorkspace(id) {
   const cleanId = sanitizeIdToken(id);
-  if (!cleanId || cleanId === 'ws_default') return false;
+  if (!cleanId) return false;
   const list = listWorkspaces();
   const next = list.filter(w => w.id !== cleanId);
   if (next.length === list.length) return false;

@@ -32,7 +32,7 @@ function updateWorkspaceControlsUI() {
 
   if (createBtn) createBtn.style.display = isGlobal ? '' : 'none';
   if (renameBtn) renameBtn.style.display = isGlobal && ws ? '' : 'none';
-  if (deleteBtn) deleteBtn.style.display = isGlobal && ws && ws.id !== 'ws_default' ? '' : 'none';
+  if (deleteBtn) deleteBtn.style.display = isGlobal && ws ? '' : 'none';
   if (membersBtn) membersBtn.style.display = canManageWs && ws ? '' : 'none';
   if (newProjBtn) newProjBtn.style.display = canManageWs && ws ? '' : 'none';
 
@@ -183,7 +183,7 @@ window.promptRenameWorkspace = function () {
 
 window.confirmDeleteCurrentWorkspace = async function () {
   const ws = getActiveWorkspace();
-  if (!isCurrentUserAdmin() || !ws || ws.id === 'ws_default') return;
+  if (!isCurrentUserAdmin() || !ws) return;
   const confirmed = await showConfirmModal(
     `Deseja excluir o workspace "${ws.name}"?`,
     'Excluir Workspace'
@@ -197,7 +197,7 @@ window.confirmDeleteCurrentWorkspace = async function () {
     return;
   }
 
-  activeWorkspaceId = 'ws_default';
+  activeWorkspaceId = null;
   currentProject = null;
   await loadWorkspaces();
   await loadProjectList();
@@ -471,19 +471,37 @@ window.handleWorkspaceChange = async function () {
 };
 
 export async function loadProjectList() {
-  const wsParam = activeWorkspaceId ? `?workspaceId=${encodeURIComponent(activeWorkspaceId)}` : '';
+  const listEl = document.getElementById('project-list');
+  const headerInfo = document.getElementById('project-header-info');
+  const headerActions = document.getElementById('project-header-actions');
+  const boardEl = document.getElementById('kanban-board');
+
+  if (!activeWorkspaceId) {
+    currentProject = null;
+    if (listEl) listEl.innerHTML = '';
+    if (headerInfo) headerInfo.style.display = 'none';
+    if (headerActions) headerActions.style.display = 'none';
+    if (boardEl) {
+      const isGlobal = isCurrentUserAdmin();
+      boardEl.innerHTML = `
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 70vh; color: var(--text-muted); text-align: center;">
+          <p style="font-size: 1.1rem; font-weight: 500; margin-bottom: 8px;">Nenhum workspace disponível</p>
+          <p style="font-size: 0.85rem; margin-bottom: 16px;">${isGlobal ? 'Crie um workspace na barra lateral para começar a organizar seus projetos.' : 'Solicite ao administrador que adicione você a um workspace.'}</p>
+          ${isGlobal ? '<button class="btn btn-primary" onclick="openNewWorkspacePrompt()">+ Criar Primeiro Workspace</button>' : ''}
+        </div>
+      `;
+    }
+    return;
+  }
+
+  const wsParam = `?workspaceId=${encodeURIComponent(activeWorkspaceId)}`;
   const res = await fetch(`/api/projects${wsParam}`);
   if (res.status === 401) {
     document.getElementById('login-modal').style.display = 'flex';
     return;
   }
   const projects = await res.json();
-  const listEl = document.getElementById('project-list');
   listEl.innerHTML = '';
-
-  const headerInfo = document.getElementById('project-header-info');
-  const headerActions = document.getElementById('project-header-actions');
-  const boardEl = document.getElementById('kanban-board');
 
   if (projects.length === 0) {
     currentProject = null;

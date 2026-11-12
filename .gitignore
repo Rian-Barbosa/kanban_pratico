@@ -21,6 +21,7 @@ caddy.txt
 
 # Dados sensíveis, credenciais e banco de dados
 data/users.json
+data/workspaces.json
 data/collaborators.json
 data/settings.json
 data/session.key

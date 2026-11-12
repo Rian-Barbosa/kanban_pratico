@@ -536,11 +536,11 @@ export async function selectProject(id) {
   const renameBtn = document.getElementById('rename-project-btn');
   const deleteBtn = document.getElementById('delete-project-btn');
 
+  const canManage = Boolean(currentProject.canManage);
   if (headerInfo) headerInfo.style.display = 'flex';
-  if (headerActions) headerActions.style.display = 'flex';
+  if (headerActions) headerActions.style.display = canManage ? 'flex' : 'none';
   if (titleEl) titleEl.textContent = currentProject.title;
 
-  const canManage = Boolean(currentProject.canManage);
   if (accessBtn) accessBtn.style.display = canManage ? '' : 'none';
   if (renameBtn) renameBtn.style.display = canManage ? '' : 'none';
   if (deleteBtn) deleteBtn.style.display = canManage ? '' : 'none';
@@ -600,6 +600,8 @@ export function renderBoard() {
 
   if (!currentProject || !currentProject.columns) return;
 
+  const canManage = Boolean(currentProject.canManage);
+
   currentProject.columns.forEach((col, idx) => {
     const colEl = document.createElement('div');
     applyColumnColor(colEl, col.color, idx);
@@ -607,8 +609,9 @@ export function renderBoard() {
 
     const safeTitle = escapeHtml(col.title);
     colEl.innerHTML = `
-      <div class="column-header">
+      <div class="column-header" style="${canManage ? '' : 'cursor: default;'}">
         <div class="column-title-group">
+          ${canManage ? `
           <span class="column-drag-handle" title="Arraste para mover a lista" aria-label="Mover lista">
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
               <circle cx="3.5" cy="3" r="1.35"></circle>
@@ -618,94 +621,97 @@ export function renderBoard() {
               <circle cx="3.5" cy="13" r="1.35"></circle>
               <circle cx="8.5" cy="13" r="1.35"></circle>
             </svg>
-          </span>
-          <span class="column-title" title="Arraste para mover ou clique duplo para renomear a lista">
+          </span>` : ''}
+          <span class="column-title" title="${canManage ? 'Arraste para mover ou clique duplo para renomear a lista' : safeTitle}">
             ${safeTitle} <span class="card-count">${col.cards.length}</span>
           </span>
         </div>
+        ${canManage ? `
         <div style="display: flex; align-items: center; gap: 4px;">
           <button class="card-action-btn" title="Editar nome e cor da lista" onclick="openEditColumnModal('${col.id}')">✏️</button>
           <button class="card-action-btn delete" title="Excluir lista" onclick="deleteColumn('${col.id}')">🗑️</button>
           <button class="btn" style="padding: 2px 6px; font-size: 0.75rem; margin-left: 2px;" onclick="openNewCardModal('${col.id}')" title="Adicionar Item">+</button>
-        </div>
+        </div>` : ''}
       </div>
       <div class="card-list" data-col-id="${col.id}"></div>
     `;
 
     const headerEl = colEl.querySelector('.column-header');
     const titleEl = colEl.querySelector('.column-title');
-    titleEl.addEventListener('dblclick', () => openEditColumnModal(col.id));
+    if (canManage) {
+      titleEl.addEventListener('dblclick', () => openEditColumnModal(col.id));
 
-    // Permite arrastar a coluna segurando pelo cabeçalho (sem bloquear botões)
-    headerEl.addEventListener('mousedown', (e) => {
-      if (!e.target.closest('button')) {
-        colEl.draggable = true;
-        document.addEventListener('mouseup', () => {
-          colEl.draggable = false;
-        }, { once: true });
-      }
-    });
-
-    colEl.addEventListener('dragstart', (e) => {
-      if (activeDraggingCard || !colEl.draggable) return;
-      activeDraggingColId = col.id;
-      colEl.classList.add('column-dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/column-id', col.id);
-    });
-
-    colEl.addEventListener('dragover', (e) => {
-      if (!activeDraggingColId || activeDraggingColId === col.id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      const rect = colEl.getBoundingClientRect();
-      const isAfter = e.clientX > rect.left + rect.width / 2;
-      colEl.classList.toggle('drop-after', isAfter);
-      colEl.classList.toggle('drop-before', !isAfter);
-    });
-
-    colEl.addEventListener('dragleave', (e) => {
-      if (!colEl.contains(e.relatedTarget)) {
-        colEl.classList.remove('drop-before', 'drop-after');
-      }
-    });
-
-    colEl.addEventListener('drop', async (e) => {
-      if (!activeDraggingColId) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      colEl.classList.remove('drop-before', 'drop-after');
-      if (activeDraggingColId === col.id) return;
-
-      const sourceIdx = currentProject.columns.findIndex(c => c.id === activeDraggingColId);
-      const targetIdx = currentProject.columns.findIndex(c => c.id === col.id);
-      if (sourceIdx === -1 || targetIdx === -1) return;
-
-      const rect = colEl.getBoundingClientRect();
-      const insertAfter = e.clientX > rect.left + rect.width / 2;
-      let destinationIdx = insertAfter ? targetIdx + 1 : targetIdx;
-      if (sourceIdx < destinationIdx) {
-        destinationIdx--;
-      }
-
-      if (destinationIdx !== sourceIdx) {
-        const [movedCol] = currentProject.columns.splice(sourceIdx, 1);
-        currentProject.columns.splice(destinationIdx, 0, movedCol);
-        activeDraggingColId = null;
-        await syncProject();
-        renderBoard();
-      }
-    });
-
-    colEl.addEventListener('dragend', () => {
-      colEl.draggable = false;
-      colEl.classList.remove('column-dragging');
-      document.querySelectorAll('.kanban-column').forEach(el => {
-        el.classList.remove('drop-before', 'drop-after');
+      // Permite arrastar a coluna segurando pelo cabeçalho (sem bloquear botões)
+      headerEl.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('button')) {
+          colEl.draggable = true;
+          document.addEventListener('mouseup', () => {
+            colEl.draggable = false;
+          }, { once: true });
+        }
       });
-      activeDraggingColId = null;
-    });
+
+      colEl.addEventListener('dragstart', (e) => {
+        if (activeDraggingCard || !colEl.draggable) return;
+        activeDraggingColId = col.id;
+        colEl.classList.add('column-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/column-id', col.id);
+      });
+
+      colEl.addEventListener('dragover', (e) => {
+        if (!activeDraggingColId || activeDraggingColId === col.id) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = colEl.getBoundingClientRect();
+        const isAfter = e.clientX > rect.left + rect.width / 2;
+        colEl.classList.toggle('drop-after', isAfter);
+        colEl.classList.toggle('drop-before', !isAfter);
+      });
+
+      colEl.addEventListener('dragleave', (e) => {
+        if (!colEl.contains(e.relatedTarget)) {
+          colEl.classList.remove('drop-before', 'drop-after');
+        }
+      });
+
+      colEl.addEventListener('drop', async (e) => {
+        if (!activeDraggingColId) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        colEl.classList.remove('drop-before', 'drop-after');
+        if (activeDraggingColId === col.id) return;
+
+        const sourceIdx = currentProject.columns.findIndex(c => c.id === activeDraggingColId);
+        const targetIdx = currentProject.columns.findIndex(c => c.id === col.id);
+        if (sourceIdx === -1 || targetIdx === -1) return;
+
+        const rect = colEl.getBoundingClientRect();
+        const insertAfter = e.clientX > rect.left + rect.width / 2;
+        let destinationIdx = insertAfter ? targetIdx + 1 : targetIdx;
+        if (sourceIdx < destinationIdx) {
+          destinationIdx--;
+        }
+
+        if (destinationIdx !== sourceIdx) {
+          const [movedCol] = currentProject.columns.splice(sourceIdx, 1);
+          currentProject.columns.splice(destinationIdx, 0, movedCol);
+          activeDraggingColId = null;
+          await syncProject();
+          renderBoard();
+        }
+      });
+
+      colEl.addEventListener('dragend', () => {
+        colEl.draggable = false;
+        colEl.classList.remove('column-dragging');
+        document.querySelectorAll('.kanban-column').forEach(el => {
+          el.classList.remove('drop-before', 'drop-after');
+        });
+        activeDraggingColId = null;
+      });
+    }
 
     const cardListEl = colEl.querySelector('.card-list');
 
@@ -767,20 +773,31 @@ export function renderBoard() {
       }
 
       cardEl.innerHTML = `
+        ${canManage ? `
         <div class="card-header-actions">
           <button class="card-action-btn" title="Editar" onclick="openEditCardModal('${col.id}', '${card.id}')">✏️</button>
           <button class="card-action-btn delete" title="Excluir" onclick="deleteCard('${col.id}', '${card.id}', event)">🗑️</button>
-        </div>
+        </div>` : ''}
         <div class="card-markdown">${renderCardMarkdown(card.content)}</div>
         ${badgesHtml ? `<div class="card-meta">${badgesHtml}</div>` : ''}
       `;
 
-      // Clique duplo no card também abre edição
-      cardEl.addEventListener('dblclick', (e) => {
-        if (e.target.tagName !== 'IMG' && !e.target.closest('.card-header-actions')) {
-          openEditCardModal(col.id, card.id);
-        }
-      });
+      // Desabilita checkboxes de checklist visualmente quando usuário não pode editar cards
+      if (!canManage) {
+        cardEl.querySelectorAll('.task-list-item-checkbox').forEach(cb => {
+          cb.disabled = true;
+          cb.style.cursor = 'default';
+        });
+      }
+
+      // Clique duplo no card também abre edição (apenas para quem pode gerenciar)
+      if (canManage) {
+        cardEl.addEventListener('dblclick', (e) => {
+          if (e.target.tagName !== 'IMG' && !e.target.closest('.card-header-actions')) {
+            openEditCardModal(col.id, card.id);
+          }
+        });
+      }
 
       // Clique em qualquer imagem do card abre o visualizador Lightbox
       cardEl.querySelectorAll('.card-markdown img').forEach(img => {
@@ -816,9 +833,14 @@ export function renderBoard() {
 // Alternância de Checklist clicável diretamente no card (como no Obsidian)
 window.handleTaskToggle = async function (e, checkboxEl) {
   e.stopPropagation();
+  if (!currentProject || !currentProject.canManage) {
+    e.preventDefault();
+    checkboxEl.checked = !checkboxEl.checked;
+    return;
+  }
   const cardEl = checkboxEl.closest('.kanban-card');
   const colEl = checkboxEl.closest('.kanban-column');
-  if (!cardEl || !colEl || !currentProject) return;
+  if (!cardEl || !colEl) return;
 
   const colId = colEl.dataset.colId;
   const cardId = cardEl.dataset.cardId;
@@ -978,6 +1000,7 @@ function renderColumnColorPicker(activeColor) {
 }
 
 window.openNewColumnModal = function () {
+  if (!currentProject || !currentProject.canManage) return;
   editingColumnId = null;
   document.getElementById('column-modal-title').textContent = 'Nova Lista';
   document.getElementById('save-column-btn').textContent = 'Adicionar Lista';
@@ -991,7 +1014,7 @@ window.openNewColumnModal = function () {
 };
 
 window.openEditColumnModal = function (colId) {
-  if (!currentProject) return;
+  if (!currentProject || !currentProject.canManage) return;
   const idx = currentProject.columns.findIndex(c => c.id === colId);
   if (idx === -1) return;
   const col = currentProject.columns[idx];
@@ -1035,7 +1058,7 @@ window.saveColumnAction = async function () {
 };
 
 window.deleteColumn = async function (colId) {
-  if (!currentProject) return;
+  if (!currentProject || !currentProject.canManage) return;
   const col = currentProject.columns.find(c => c.id === colId);
   if (!col) return;
 
@@ -2277,6 +2300,7 @@ function setupVisualEditorLiveKeys() {
 let targetColForNewCard = null;
 
 window.openNewCardModal = function (colId) {
+  if (!currentProject || !currentProject.canManage) return;
   editingCardId = null;
   targetColForNewCard = colId;
   savedVisualRange = null;
@@ -2302,6 +2326,7 @@ window.openNewCardModal = function (colId) {
 };
 
 window.openEditCardModal = function (colId, cardId) {
+  if (!currentProject || !currentProject.canManage) return;
   editingCardId = cardId;
   targetColForNewCard = colId;
   savedVisualRange = null;
@@ -2337,6 +2362,7 @@ window.openEditCardModal = function (colId, cardId) {
 
 window.deleteCard = async function (colId, cardId, event) {
   if (event) event.stopPropagation();
+  if (!currentProject || !currentProject.canManage) return;
   const confirmed = await showConfirmModal('Deseja realmente excluir este item?', 'Excluir Item');
   if (!confirmed) return;
 

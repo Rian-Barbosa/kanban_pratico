@@ -346,10 +346,44 @@ export default async function apiRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Formato de projeto inválido.' });
       }
 
+      const canManage = canManageProject(existing, ws, username);
+      if (!canManage) {
+        // Colaborador comum: pode APENAS movimentar cards existentes entre as mesmas colunas
+        const incomingCols = projectData.columns;
+        if (incomingCols.length !== existing.columns.length) {
+          return reply.code(403).send({ error: 'Colaboradores comuns podem apenas movimentar cards entre listas.' });
+        }
+
+        for (let i = 0; i < existing.columns.length; i++) {
+          const exCol = existing.columns[i];
+          const inCol = incomingCols[i];
+          if (!inCol || !Array.isArray(inCol.cards) || inCol.title !== exCol.title || (inCol.color || '') !== (exCol.color || '')) {
+            return reply.code(403).send({ error: 'Colaboradores comuns não podem criar, editar, excluir ou reordenar listas.' });
+          }
+        }
+
+        const cardFingerprint = (c) => JSON.stringify({
+          content: c?.content || '',
+          urgency: c?.urgency || null,
+          dueDate: c?.dueDate || null,
+          assignees: Array.isArray(c?.assignees) ? c.assignees : (c?.assignee ? [c.assignee] : []),
+          completed: Boolean(c?.completed)
+        });
+
+        const exCards = existing.columns.flatMap(col => col.cards.map(cardFingerprint)).sort();
+        const inCards = incomingCols.flatMap(col => col.cards.map(cardFingerprint)).sort();
+
+        if (exCards.length !== inCards.length || exCards.some((fp, idx) => fp !== inCards[idx])) {
+          return reply.code(403).send({ error: 'Colaboradores comuns podem apenas movimentar cards entre listas, sem criar, editar ou excluir cards.' });
+        }
+      }
+
       // Hardening: nunca aceita alteração de owner/workspace/allowed_users via PUT do quadro
       const safeProjectData = {
         ...projectData,
-        title: typeof projectData.title === 'string' && projectData.title.trim() ? projectData.title.trim() : existing.title,
+        title: canManage && typeof projectData.title === 'string' && projectData.title.trim()
+          ? projectData.title.trim()
+          : existing.title,
         workspace: existing.workspace,
         owner: existing.owner,
         allowed_users: existing.allowed_users

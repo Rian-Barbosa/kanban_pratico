@@ -105,8 +105,19 @@ export function parseMarkdownKanban(rawMarkdown) {
     }
   }
 
+  const allowedUsers = Array.isArray(frontmatter.allowed_users)
+    ? frontmatter.allowed_users.map(u => String(u).trim()).filter(Boolean)
+    : [];
+
   return {
     title: frontmatter.title || 'Quadro',
+    workspace: typeof frontmatter.workspace === 'string' && frontmatter.workspace.trim()
+      ? frontmatter.workspace.trim()
+      : 'ws_default',
+    owner: typeof frontmatter.owner === 'string' && frontmatter.owner.trim()
+      ? frontmatter.owner.trim()
+      : 'admin',
+    allowed_users: allowedUsers,
     columns
   };
 }
@@ -115,9 +126,16 @@ export function parseMarkdownKanban(rawMarkdown) {
  * Converte a estrutura de colunas e cards de volta para Markdown padrão Obsidian Kanban.
  */
 export function serializeMarkdownKanban(data) {
+  const allowedUsers = Array.isArray(data.allowed_users)
+    ? [...new Set(data.allowed_users.map(u => String(u).trim()).filter(Boolean))]
+    : [];
+
   const frontmatter = {
     'kanban-plugin': 'basic',
-    title: data.title || 'Quadro'
+    title: data.title || 'Quadro',
+    workspace: data.workspace || 'ws_default',
+    owner: data.owner || 'admin',
+    allowed_users: allowedUsers
   };
 
   let mdContent = matter.stringify('', frontmatter);
@@ -170,10 +188,16 @@ export function listProjects() {
       const filePath = path.join(CONFIG.VAULTS_DIR, file);
       const content = fs.readFileSync(filePath, 'utf-8');
       const { data } = matter(content);
+      const allowedUsers = Array.isArray(data.allowed_users)
+        ? data.allowed_users.map(u => String(u).trim()).filter(Boolean)
+        : [];
       return {
         id: file.replace(/\.md$/, ''),
         filename: file,
-        title: data.title || file.replace(/\.md$/, '')
+        title: data.title || file.replace(/\.md$/, ''),
+        workspace: typeof data.workspace === 'string' && data.workspace.trim() ? data.workspace.trim() : 'ws_default',
+        owner: typeof data.owner === 'string' && data.owner.trim() ? data.owner.trim() : 'admin',
+        allowed_users: allowedUsers
       };
     });
 }
@@ -298,5 +322,114 @@ export function deleteCollaborator(id) {
   list = list.filter(c => c.id !== id);
   fs.writeFileSync(CONFIG.COLLABORATORS_FILE, JSON.stringify(list, null, 2), 'utf-8');
   return true;
+}
+
+/**
+ * Gestão de Workspaces & Autorização
+ */
+export function isGlobalAdmin(username) {
+  return typeof username === 'string' && username.trim().toLowerCase() === 'admin';
+}
+
+export function sanitizeIdToken(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/[^a-zA-Z0-9_.-]/g, '');
+}
+
+export function ensureDefaultWorkspace() {
+  let data = { workspaces: [] };
+  if (fs.existsSync(CONFIG.WORKSPACES_FILE)) {
+    try {
+      data = JSON.parse(fs.readFileSync(CONFIG.WORKSPACES_FILE, 'utf-8'));
+      if (!Array.isArray(data.workspaces)) data.workspaces = [];
+    } catch {
+      data = { workspaces: [] };
+    }
+  }
+
+  if (!data.workspaces.some(w => w.id === 'ws_default')) {
+    data.workspaces.unshift({
+      id: 'ws_default',
+      name: 'Geral',
+      owner: 'admin',
+      members: [],
+      createdAt: new Date().toISOString()
+    });
+    fs.writeFileSync(CONFIG.WORKSPACES_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  return data.workspaces;
+}
+
+export function listWorkspaces() {
+  return ensureDefaultWorkspace();
+}
+
+export function getWorkspace(id) {
+  const cleanId = sanitizeIdToken(id);
+  if (!cleanId) return null;
+  return listWorkspaces().find(w => w.id === cleanId) || null;
+}
+
+export function saveWorkspace(workspace) {
+  const list = listWorkspaces();
+  const idx = list.findIndex(w => w.id === workspace.id);
+  if (idx !== -1) {
+    list[idx] = { ...list[idx], ...workspace };
+  } else {
+    list.push(workspace);
+  }
+  fs.writeFileSync(CONFIG.WORKSPACES_FILE, JSON.stringify({ workspaces: list }, null, 2), 'utf-8');
+  return workspace;
+}
+
+export function deleteWorkspace(id) {
+  const cleanId = sanitizeIdToken(id);
+  if (!cleanId || cleanId === 'ws_default') return false;
+  const list = listWorkspaces();
+  const next = list.filter(w => w.id !== cleanId);
+  if (next.length === list.length) return false;
+  fs.writeFileSync(CONFIG.WORKSPACES_FILE, JSON.stringify({ workspaces: next }, null, 2), 'utf-8');
+  return true;
+}
+
+export function getUserWorkspaceRole(ws, username) {
+  if (!ws || !username) return null;
+  if (isGlobalAdmin(username)) return 'owner';
+  const lowerUser = username.toLowerCase();
+  if (ws.owner && ws.owner.toLowerCase() === lowerUser) return 'owner';
+  const member = Array.isArray(ws.members)
+    ? ws.members.find(m => m.username && m.username.toLowerCase() === lowerUser)
+    : null;
+  if (!member) return null;
+  return member.role === 'admin' ? 'admin' : 'member';
+}
+
+export function canManageWorkspace(ws, username) {
+  const role = getUserWorkspaceRole(ws, username);
+  return role === 'owner' || role === 'admin';
+}
+
+export function canAccessProject(projectMeta, ws, username) {
+  if (!projectMeta || !username) return false;
+  if (isGlobalAdmin(username)) return true;
+
+  const lowerUser = username.toLowerCase();
+  const role = getUserWorkspaceRole(ws, username);
+  if (!role) return false;
+
+  if (role === 'owner' || role === 'admin') return true;
+  if (projectMeta.owner && projectMeta.owner.toLowerCase() === lowerUser) return true;
+
+  return Array.isArray(projectMeta.allowed_users) &&
+    projectMeta.allowed_users.some(u => typeof u === 'string' && u.toLowerCase() === lowerUser);
+}
+
+export function canManageProject(projectMeta, ws, username) {
+  if (!projectMeta || !username) return false;
+  if (isGlobalAdmin(username)) return true;
+  const role = getUserWorkspaceRole(ws, username);
+  if (role === 'owner' || role === 'admin') return true;
+  return Boolean(projectMeta.owner && projectMeta.owner.toLowerCase() === username.toLowerCase());
 }
 

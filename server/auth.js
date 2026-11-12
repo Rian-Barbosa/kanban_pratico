@@ -101,6 +101,19 @@ export async function verifyUser(username, password) {
   }
 }
 
+export function listUsernames() {
+  if (!fs.existsSync(CONFIG.USERS_FILE)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(CONFIG.USERS_FILE, 'utf-8'));
+    if (!Array.isArray(data.users)) return [];
+    return data.users
+      .map(u => ({ username: u.username }))
+      .filter(u => typeof u.username === 'string' && u.username.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function authMiddleware(req, reply, done) {
   if (req.session && req.session.user) {
     return done();

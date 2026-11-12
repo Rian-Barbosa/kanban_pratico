@@ -44,6 +44,7 @@ export const CONFIG = {
   VAULTS_DIR: path.join(DATA_DIR, 'vaults'),
   ATTACHMENTS_DIR: path.join(DATA_DIR, 'attachments'),
   USERS_FILE: path.join(DATA_DIR, 'users.json'),
+  WORKSPACES_FILE: path.join(DATA_DIR, 'workspaces.json'),
   COLLABORATORS_FILE: path.join(DATA_DIR, 'collaborators.json'),
   SETTINGS_FILE: path.join(DATA_DIR, 'settings.json')
 };

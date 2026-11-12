@@ -2,9 +2,43 @@ import { renderCardMarkdown, escapeHtml } from './markdown.js';
 
 let currentProject = null;
 let currentUser = null;
+let workspacesList = [];
+let activeWorkspaceId = null;
 let activeDraggingCard = null;
 let dragSourceColId = null;
 let activeDraggingColId = null;
+
+function getActiveWorkspace() {
+  return workspacesList.find(w => w.id === activeWorkspaceId) || null;
+}
+
+function canManageActiveWorkspace() {
+  if (isCurrentUserAdmin()) return true;
+  const ws = getActiveWorkspace();
+  return Boolean(ws && (ws.myRole === 'owner' || ws.myRole === 'admin'));
+}
+
+function updateWorkspaceControlsUI() {
+  const isGlobal = isCurrentUserAdmin();
+  const canManageWs = canManageActiveWorkspace();
+  const ws = getActiveWorkspace();
+
+  const createBtn = document.getElementById('ws-create-btn');
+  const renameBtn = document.getElementById('ws-rename-btn');
+  const deleteBtn = document.getElementById('ws-delete-btn');
+  const membersBtn = document.getElementById('ws-members-btn');
+  const newProjBtn = document.getElementById('new-project-btn');
+  const collabBtn = document.getElementById('sidebar-collaborators-btn');
+
+  if (createBtn) createBtn.style.display = isGlobal ? '' : 'none';
+  if (renameBtn) renameBtn.style.display = isGlobal && ws ? '' : 'none';
+  if (deleteBtn) deleteBtn.style.display = isGlobal && ws && ws.id !== 'ws_default' ? '' : 'none';
+  if (membersBtn) membersBtn.style.display = canManageWs && ws ? '' : 'none';
+  if (newProjBtn) newProjBtn.style.display = canManageWs && ws ? '' : 'none';
+
+  const canManageAnyWs = isGlobal || workspacesList.some(w => w.myRole === 'owner' || w.myRole === 'admin');
+  if (collabBtn) collabBtn.style.display = canManageAnyWs ? 'flex' : 'none';
+}
 
 function isCurrentUserAdmin() {
   return Boolean(currentUser && typeof currentUser.username === 'string' && currentUser.username.toLowerCase() === 'admin');
@@ -43,9 +77,12 @@ function updateAdminBrandUI() {
 
 export async function initKanban() {
   await loadCustomAppName();
-  await checkAuth();
-  await loadCollaborators();
-  await loadProjectList();
+  const authed = await checkAuth();
+  if (authed) {
+    await loadWorkspaces();
+    await loadCollaborators();
+    await loadProjectList();
+  }
   setupGlobalClipboardPaste();
   setupVisualEditorLiveKeys();
 }
@@ -118,7 +155,56 @@ window.promptChangeAppName = function () {
   document.getElementById('project-name-input').focus();
 };
 
+window.openNewWorkspacePrompt = function () {
+  if (!isCurrentUserAdmin()) return;
+  projectInputMode = 'create_workspace';
+  document.getElementById('project-input-modal-title').textContent = 'Novo Workspace';
+  document.getElementById('project-input-label').textContent = 'Nome do Workspace';
+  document.getElementById('project-name-input').value = '';
+  document.getElementById('project-name-input').placeholder = 'Ex: Tecnologia, Marketing, Pessoal...';
+  document.getElementById('save-project-input-btn').textContent = 'Criar Workspace';
+  resetProjectInputModalExtras();
+  document.getElementById('project-input-modal').style.display = 'flex';
+  document.getElementById('project-name-input').focus();
+};
+
+window.promptRenameWorkspace = function () {
+  const ws = getActiveWorkspace();
+  if (!isCurrentUserAdmin() || !ws) return;
+  projectInputMode = 'rename_workspace';
+  document.getElementById('project-input-modal-title').textContent = 'Renomear Workspace';
+  document.getElementById('project-input-label').textContent = 'Novo Nome do Workspace';
+  document.getElementById('project-name-input').value = ws.name;
+  document.getElementById('save-project-input-btn').textContent = 'Salvar Alteração';
+  resetProjectInputModalExtras();
+  document.getElementById('project-input-modal').style.display = 'flex';
+  document.getElementById('project-name-input').focus();
+};
+
+window.confirmDeleteCurrentWorkspace = async function () {
+  const ws = getActiveWorkspace();
+  if (!isCurrentUserAdmin() || !ws || ws.id === 'ws_default') return;
+  const confirmed = await showConfirmModal(
+    `Deseja excluir o workspace "${ws.name}"?`,
+    'Excluir Workspace'
+  );
+  if (!confirmed) return;
+
+  const res = await fetch(`/api/workspaces/${ws.id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    await showConfirmModal(data.error || 'Não foi possível excluir o workspace.', 'Aviso');
+    return;
+  }
+
+  activeWorkspaceId = 'ws_default';
+  currentProject = null;
+  await loadWorkspaces();
+  await loadProjectList();
+};
+
 window.openNewProjectPrompt = function () {
+  if (!canManageActiveWorkspace()) return;
   projectInputMode = 'create_project';
   document.getElementById('project-input-modal-title').textContent = 'Novo Projeto';
   document.getElementById('project-input-label').textContent = 'Nome do Projeto / Quadro';
@@ -196,17 +282,58 @@ window.saveProjectInputAction = async function () {
         errEl.style.display = 'block';
       }
     }
+  } else if (projectInputMode === 'create_workspace') {
+    const res = await fetch('/api/workspaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: val })
+    });
+    if (res.ok) {
+      const ws = await res.json();
+      activeWorkspaceId = ws.id;
+      if (currentUser) {
+        localStorage.setItem(`kanban_active_workspace_${currentUser.username}`, ws.id);
+      }
+      currentProject = null;
+      closeProjectInputModal();
+      await loadWorkspaces();
+      await loadProjectList();
+    } else if (errEl) {
+      const data = await res.json().catch(() => ({}));
+      errEl.textContent = data.error || 'Erro ao criar workspace.';
+      errEl.style.display = 'block';
+    }
+  } else if (projectInputMode === 'rename_workspace') {
+    const ws = getActiveWorkspace();
+    if (!ws) return;
+    const res = await fetch(`/api/workspaces/${ws.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: val })
+    });
+    if (res.ok) {
+      closeProjectInputModal();
+      await loadWorkspaces();
+    } else if (errEl) {
+      const data = await res.json().catch(() => ({}));
+      errEl.textContent = data.error || 'Erro ao renomear workspace.';
+      errEl.style.display = 'block';
+    }
   } else if (projectInputMode === 'create_project') {
     const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: val })
+      body: JSON.stringify({ title: val, workspaceId: activeWorkspaceId || 'ws_default' })
     });
     if (res.ok) {
       const proj = await res.json();
       closeProjectInputModal();
       await loadProjectList();
       selectProject(proj.id);
+    } else if (errEl) {
+      const data = await res.json().catch(() => ({}));
+      errEl.textContent = data.error || 'Sem permissão para criar projeto.';
+      errEl.style.display = 'block';
     }
   } else if (projectInputMode === 'rename_project' && currentProject) {
     if (val === currentProject.title) {
@@ -234,15 +361,19 @@ async function checkAuth() {
     if (!data.authenticated) {
       currentUser = null;
       updateAdminBrandUI();
+      updateWorkspaceControlsUI();
       document.getElementById('login-modal').style.display = 'flex';
+      return false;
     } else {
       currentUser = data.user;
       updateAdminBrandUI();
       document.getElementById('login-modal').style.display = 'none';
       document.getElementById('user-display').textContent = data.user.username;
+      return true;
     }
   } catch (err) {
     console.error(err);
+    return false;
   }
 }
 
@@ -267,6 +398,7 @@ window.handleLogin = async function (e) {
       updateAdminBrandUI();
       document.getElementById('login-modal').style.display = 'none';
       await loadCustomAppName();
+      await loadWorkspaces();
       await loadCollaborators();
       await loadProjectList();
     } else {
@@ -285,8 +417,62 @@ window.handleLogout = async function () {
   location.reload();
 };
 
+export async function loadWorkspaces() {
+  const res = await fetch('/api/workspaces');
+  if (res.status === 401) return;
+  if (!res.ok) return;
+
+  workspacesList = await res.json();
+  const selectEl = document.getElementById('workspace-select');
+  if (!selectEl) return;
+
+  selectEl.innerHTML = '';
+
+  if (workspacesList.length === 0) {
+    activeWorkspaceId = null;
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Nenhum workspace';
+    selectEl.appendChild(opt);
+    updateWorkspaceControlsUI();
+    return;
+  }
+
+  const savedKey = currentUser ? `kanban_active_workspace_${currentUser.username}` : null;
+  const savedWs = savedKey ? localStorage.getItem(savedKey) : null;
+
+  if (!activeWorkspaceId || !workspacesList.some(w => w.id === activeWorkspaceId)) {
+    activeWorkspaceId = (savedWs && workspacesList.some(w => w.id === savedWs))
+      ? savedWs
+      : workspacesList[0].id;
+  }
+
+  workspacesList.forEach(ws => {
+    const opt = document.createElement('option');
+    opt.value = ws.id;
+    opt.textContent = ws.name;
+    if (ws.id === activeWorkspaceId) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+
+  updateWorkspaceControlsUI();
+}
+
+window.handleWorkspaceChange = async function () {
+  const selectEl = document.getElementById('workspace-select');
+  if (!selectEl) return;
+  activeWorkspaceId = selectEl.value || null;
+  if (currentUser && activeWorkspaceId) {
+    localStorage.setItem(`kanban_active_workspace_${currentUser.username}`, activeWorkspaceId);
+  }
+  currentProject = null;
+  updateWorkspaceControlsUI();
+  await loadProjectList();
+};
+
 export async function loadProjectList() {
-  const res = await fetch('/api/projects');
+  const wsParam = activeWorkspaceId ? `?workspaceId=${encodeURIComponent(activeWorkspaceId)}` : '';
+  const res = await fetch(`/api/projects${wsParam}`);
   if (res.status === 401) {
     document.getElementById('login-modal').style.display = 'flex';
     return;
@@ -304,15 +490,20 @@ export async function loadProjectList() {
     if (headerInfo) headerInfo.style.display = 'none';
     if (headerActions) headerActions.style.display = 'none';
     if (boardEl) {
+      const canCreate = canManageActiveWorkspace();
       boardEl.innerHTML = `
         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 70vh; color: var(--text-muted); text-align: center;">
-          <p style="font-size: 1.1rem; font-weight: 500; margin-bottom: 8px;">Nenhum quadro selecionado</p>
-          <p style="font-size: 0.85rem; margin-bottom: 16px;">Crie um novo projeto na barra lateral para começar a organizar suas tarefas.</p>
-          <button class="btn btn-primary" onclick="openNewProjectPrompt()">+ Criar Primeiro Projeto</button>
+          <p style="font-size: 1.1rem; font-weight: 500; margin-bottom: 8px;">Nenhum quadro disponível neste workspace</p>
+          <p style="font-size: 0.85rem; margin-bottom: 16px;">${canCreate ? 'Crie um novo projeto na barra lateral para começar a organizar suas tarefas.' : 'Solicite ao administrador do workspace que compartilhe um projeto com você.'}</p>
+          ${canCreate ? '<button class="btn btn-primary" onclick="openNewProjectPrompt()">+ Criar Primeiro Projeto</button>' : ''}
         </div>
       `;
     }
     return;
+  }
+
+  if (currentProject && !projects.some(p => p.id === currentProject.id)) {
+    currentProject = null;
   }
 
   projects.forEach((proj, idx) => {
@@ -341,10 +532,18 @@ export async function selectProject(id) {
   const headerInfo = document.getElementById('project-header-info');
   const headerActions = document.getElementById('project-header-actions');
   const titleEl = document.getElementById('current-project-title');
+  const accessBtn = document.getElementById('project-access-btn');
+  const renameBtn = document.getElementById('rename-project-btn');
+  const deleteBtn = document.getElementById('delete-project-btn');
 
   if (headerInfo) headerInfo.style.display = 'flex';
   if (headerActions) headerActions.style.display = 'flex';
   if (titleEl) titleEl.textContent = currentProject.title;
+
+  const canManage = Boolean(currentProject.canManage);
+  if (accessBtn) accessBtn.style.display = canManage ? '' : 'none';
+  if (renameBtn) renameBtn.style.display = canManage ? '' : 'none';
+  if (deleteBtn) deleteBtn.style.display = canManage ? '' : 'none';
 
   // Atualiza classe ativa na sidebar usando comparação exata pelo ID
   const items = document.querySelectorAll('.project-item');
@@ -871,29 +1070,50 @@ function renderAssigneesSelection(selectedNames = []) {
 
   container.innerHTML = '';
 
-  if (collaboratorsList.length === 0) {
-    container.innerHTML = '<span style="font-size: 0.78rem; color: var(--text-muted);">Nenhum colaborador cadastrado.</span>';
+  const assigneeMap = new Map();
+  const addOption = (name) => {
+    if (!name || typeof name !== 'string') return;
+    const clean = name.trim();
+    if (clean && !assigneeMap.has(clean.toLowerCase())) {
+      assigneeMap.set(clean.toLowerCase(), clean);
+    }
+  };
+
+  // 1. Membros reais com acesso ao projeto atual (users.json)
+  if (currentProject && Array.isArray(currentProject.projectMembers)) {
+    currentProject.projectMembers.forEach(addOption);
+  }
+  // 2. Etiquetas extras cadastradas por admins (collaborators.json)
+  collaboratorsList.forEach(c => addOption(c.name));
+  // 3. Preserva eventuais responsáveis já atribuídos no card
+  selectedNames.forEach(addOption);
+
+  const options = Array.from(assigneeMap.values());
+  if (options.length === 0) {
+    container.innerHTML = '<span style="font-size: 0.78rem; color: var(--text-muted);">Nenhum responsável disponível.</span>';
     return;
   }
 
-  collaboratorsList.forEach(collab => {
+  const selectedLower = new Set(selectedNames.map(n => String(n).toLowerCase()));
+
+  options.forEach(name => {
     const label = document.createElement('label');
-    const isSelected = selectedNames.includes(collab.name);
+    const isSelected = selectedLower.has(name.toLowerCase());
     label.className = `assignee-chip-label ${isSelected ? 'selected' : ''}`;
 
-    label.innerHTML = `
-      <input type="checkbox" value="${collab.name}" ${isSelected ? 'checked' : ''} />
-      <span>👤 ${collab.name}</span>
-    `;
-
-    label.querySelector('input').addEventListener('change', (e) => {
-      if (e.target.checked) {
-        label.classList.add('selected');
-      } else {
-        label.classList.remove('selected');
-      }
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = name;
+    cb.checked = isSelected;
+    cb.addEventListener('change', (e) => {
+      label.classList.toggle('selected', e.target.checked);
     });
 
+    const span = document.createElement('span');
+    span.textContent = `👤 ${name}`;
+
+    label.appendChild(cb);
+    label.appendChild(span);
     container.appendChild(label);
   });
 }
@@ -906,6 +1126,8 @@ function getSelectedAssignees() {
 }
 
 window.openCollaboratorsModal = async function () {
+  const canManageAnyWs = isCurrentUserAdmin() || workspacesList.some(w => w.myRole === 'owner' || w.myRole === 'admin');
+  if (!canManageAnyWs) return;
   await loadCollaborators();
   renderCollaboratorsList();
   document.getElementById('collaborators-modal').style.display = 'flex';
@@ -3193,6 +3415,319 @@ function setupHotkeysListener() {
 
 // Inicia escuta de atalhos e paleta
 setupHotkeysListener();
+
+// --- Gestão de Membros do Workspace e Acesso aos Projetos ---
+let draftWorkspaceMembers = [];
+let availableSystemUsers = [];
+
+async function fetchSystemUsers() {
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      availableSystemUsers = await res.json();
+    } else {
+      availableSystemUsers = [];
+    }
+  } catch {
+    availableSystemUsers = [];
+  }
+}
+
+function renderWorkspaceMembersList() {
+  const ws = getActiveWorkspace();
+  const listEl = document.getElementById('ws-members-list');
+  const userSelectEl = document.getElementById('ws-member-user-select');
+  const roleSelectEl = document.getElementById('ws-member-role-select');
+  if (!ws || !listEl || !userSelectEl) return;
+
+  const callerIsOwnerOrGlobal = isCurrentUserAdmin() ||
+    (currentUser && ws.owner && ws.owner.toLowerCase() === currentUser.username.toLowerCase());
+
+  if (roleSelectEl) {
+    const adminOpt = roleSelectEl.querySelector('option[value="admin"]');
+    if (adminOpt) {
+      adminOpt.disabled = !callerIsOwnerOrGlobal;
+    }
+    if (!callerIsOwnerOrGlobal) {
+      roleSelectEl.value = 'member';
+    }
+  }
+
+  // Popula dropdown com usuários ainda não incluídos neste workspace
+  const existingSet = new Set([
+    'admin',
+    (ws.owner || '').toLowerCase(),
+    ...draftWorkspaceMembers.map(m => m.username.toLowerCase())
+  ]);
+
+  userSelectEl.innerHTML = '';
+  const candidates = availableSystemUsers.filter(u => !existingSet.has(u.username.toLowerCase()));
+  if (candidates.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Todos os usuários já adicionados';
+    userSelectEl.appendChild(opt);
+  } else {
+    candidates.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.username;
+      opt.textContent = u.username;
+      userSelectEl.appendChild(opt);
+    });
+  }
+
+  listEl.innerHTML = '';
+
+  // Mostra o dono fixo no topo
+  const ownerRow = document.createElement('div');
+  ownerRow.className = 'access-member-row';
+  ownerRow.innerHTML = `
+    <span>👤 <strong>${escapeHtml(ws.owner || 'admin')}</strong></span>
+    <span class="access-role-badge">Dono</span>
+  `;
+  listEl.appendChild(ownerRow);
+
+  draftWorkspaceMembers.forEach((member, idx) => {
+    const row = document.createElement('div');
+    row.className = 'access-member-row';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = `👤 ${member.username}`;
+
+    const controlsDiv = document.createElement('div');
+    controlsDiv.style.display = 'flex';
+    controlsDiv.style.alignItems = 'center';
+    controlsDiv.style.gap = '6px';
+
+    if (callerIsOwnerOrGlobal) {
+      const select = document.createElement('select');
+      select.className = 'form-control';
+      select.style.padding = '3px 6px';
+      select.style.fontSize = '0.78rem';
+      select.style.width = 'auto';
+      select.innerHTML = `
+        <option value="member">Colaborador</option>
+        <option value="admin">Admin do WS</option>
+      `;
+      select.value = member.role === 'admin' ? 'admin' : 'member';
+      select.onchange = (e) => {
+        draftWorkspaceMembers[idx].role = e.target.value === 'admin' ? 'admin' : 'member';
+      };
+      controlsDiv.appendChild(select);
+
+      const rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'card-action-btn delete';
+      rmBtn.textContent = '🗑️';
+      rmBtn.title = 'Remover do workspace';
+      rmBtn.onclick = () => {
+        draftWorkspaceMembers.splice(idx, 1);
+        renderWorkspaceMembersList();
+      };
+      controlsDiv.appendChild(rmBtn);
+    } else {
+      const badge = document.createElement('span');
+      badge.className = 'access-role-badge';
+      badge.textContent = member.role === 'admin' ? 'Admin do WS' : 'Colaborador';
+      controlsDiv.appendChild(badge);
+
+      if (member.role !== 'admin') {
+        const rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 'card-action-btn delete';
+        rmBtn.textContent = '🗑️';
+        rmBtn.title = 'Remover do workspace';
+        rmBtn.onclick = () => {
+          draftWorkspaceMembers.splice(idx, 1);
+          renderWorkspaceMembersList();
+        };
+        controlsDiv.appendChild(rmBtn);
+      }
+    }
+
+    row.appendChild(nameSpan);
+    row.appendChild(controlsDiv);
+    listEl.appendChild(row);
+  });
+}
+
+window.openWorkspaceMembersModal = async function () {
+  const ws = getActiveWorkspace();
+  if (!ws || !canManageActiveWorkspace()) return;
+
+  const errEl = document.getElementById('ws-members-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  document.getElementById('ws-members-modal-title').textContent = `👥 Membros — ${ws.name}`;
+  draftWorkspaceMembers = Array.isArray(ws.members)
+    ? ws.members.map(m => ({ username: m.username, role: m.role === 'admin' ? 'admin' : 'member' }))
+    : [];
+
+  await fetchSystemUsers();
+  renderWorkspaceMembersList();
+  document.getElementById('workspace-members-modal').style.display = 'flex';
+};
+
+window.closeWorkspaceMembersModal = function () {
+  document.getElementById('workspace-members-modal').style.display = 'none';
+};
+
+window.addWorkspaceMemberRow = function () {
+  const userSelect = document.getElementById('ws-member-user-select');
+  const roleSelect = document.getElementById('ws-member-role-select');
+  const username = userSelect?.value?.trim();
+  if (!username) return;
+
+  const role = roleSelect?.value === 'admin' ? 'admin' : 'member';
+  if (!draftWorkspaceMembers.some(m => m.username.toLowerCase() === username.toLowerCase())) {
+    draftWorkspaceMembers.push({ username, role });
+    renderWorkspaceMembersList();
+  }
+};
+
+window.saveWorkspaceMembersAction = async function () {
+  const ws = getActiveWorkspace();
+  if (!ws) return;
+  const errEl = document.getElementById('ws-members-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  const res = await fetch(`/api/workspaces/${ws.id}/members`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ members: draftWorkspaceMembers })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (errEl) {
+      errEl.textContent = data.error || 'Erro ao salvar membros.';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  closeWorkspaceMembersModal();
+  await loadWorkspaces();
+};
+
+window.openProjectAccessModal = async function () {
+  if (!currentProject || !currentProject.canManage) return;
+  const ws = getActiveWorkspace();
+  if (!ws) return;
+
+  const errEl = document.getElementById('project-access-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  document.getElementById('project-access-modal-title').textContent = `🔐 Acesso — ${currentProject.title}`;
+  const listEl = document.getElementById('project-access-list');
+  listEl.innerHTML = '';
+
+  const currentAllowed = new Set(
+    (currentProject.allowed_users || []).map(u => String(u).toLowerCase())
+  );
+
+  // Dono / Admins do workspace têm acesso automático
+  const ownerRow = document.createElement('div');
+  ownerRow.className = 'access-member-row';
+  ownerRow.innerHTML = `
+    <span>👤 <strong>${escapeHtml(currentProject.owner || 'admin')}</strong></span>
+    <span class="access-role-badge">Dono do Projeto</span>
+  `;
+  listEl.appendChild(ownerRow);
+
+  const wsMembers = Array.isArray(ws.members) ? ws.members : [];
+  if (wsMembers.length === 0) {
+    const emptyMsg = document.createElement('p');
+    emptyMsg.style.fontSize = '0.82rem';
+    emptyMsg.style.color = 'var(--text-muted)';
+    emptyMsg.style.marginTop = '6px';
+    emptyMsg.textContent = 'Nenhum colaborador adicionado neste workspace ainda. Adicione membros em "👥" ao lado do seletor de Workspace.';
+    listEl.appendChild(emptyMsg);
+  } else {
+    wsMembers.forEach(member => {
+      const row = document.createElement('label');
+      row.className = 'access-member-row';
+      row.style.cursor = member.role === 'admin' ? 'default' : 'pointer';
+
+      const left = document.createElement('span');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '8px';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = member.username;
+      if (member.role === 'admin') {
+        cb.checked = true;
+        cb.disabled = true;
+      } else {
+        cb.checked = currentAllowed.has(member.username.toLowerCase());
+      }
+
+      const labelText = document.createElement('span');
+      labelText.textContent = member.username;
+
+      left.appendChild(cb);
+      left.appendChild(labelText);
+
+      const badge = document.createElement('span');
+      badge.className = 'access-role-badge';
+      badge.textContent = member.role === 'admin' ? 'Admin (Automático)' : 'Colaborador';
+
+      row.appendChild(left);
+      row.appendChild(badge);
+      listEl.appendChild(row);
+    });
+  }
+
+  document.getElementById('project-access-modal').style.display = 'flex';
+};
+
+window.closeProjectAccessModal = function () {
+  document.getElementById('project-access-modal').style.display = 'none';
+};
+
+window.saveProjectAccessAction = async function () {
+  if (!currentProject) return;
+  const errEl = document.getElementById('project-access-error');
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
+
+  const checkboxes = document.querySelectorAll('#project-access-list input[type="checkbox"]:not(:disabled)');
+  const allowedUsers = Array.from(checkboxes)
+    .filter(cb => cb.checked)
+    .map(cb => cb.value);
+
+  const res = await fetch(`/api/projects/${currentProject.id}/access`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allowed_users: allowedUsers })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (errEl) {
+      errEl.textContent = data.error || 'Erro ao salvar permissões.';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  currentProject.allowed_users = data.allowed_users || allowedUsers;
+  await selectProject(currentProject.id);
+  closeProjectAccessModal();
+};
 
 // Inicia aplicação ao carregar
 window.addEventListener('DOMContentLoaded', initKanban);

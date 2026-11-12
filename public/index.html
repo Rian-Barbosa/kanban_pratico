@@ -17,9 +17,22 @@
         <button class="card-action-btn brand-edit-btn" id="brand-edit-btn" style="display: none;" onclick="promptChangeAppName()" title="Alterar Nome do App">✏️</button>
       </div>
 
+      <div class="workspace-selector-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span class="sidebar-section-title" style="margin-bottom: 0;">Workspace</span>
+          <div style="display: flex; align-items: center; gap: 3px;">
+            <button class="card-action-btn" id="ws-members-btn" style="display: none;" onclick="openWorkspaceMembersModal()" title="Membros do Workspace">👥</button>
+            <button class="card-action-btn" id="ws-rename-btn" style="display: none;" onclick="promptRenameWorkspace()" title="Renomear Workspace">✏️</button>
+            <button class="card-action-btn delete" id="ws-delete-btn" style="display: none;" onclick="confirmDeleteCurrentWorkspace()" title="Excluir Workspace">🗑️</button>
+            <button class="btn" id="ws-create-btn" style="display: none; padding: 2px 6px; font-size: 0.75rem;" onclick="openNewWorkspacePrompt()" title="Novo Workspace">+</button>
+          </div>
+        </div>
+        <select id="workspace-select" class="form-control workspace-select" onchange="handleWorkspaceChange()"></select>
+      </div>
+
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <span class="sidebar-section-title">Projetos</span>
-        <button class="btn" style="padding: 2px 6px; font-size: 0.75rem;" onclick="openNewProjectPrompt()">+ Novo</button>
+        <button class="btn" id="new-project-btn" style="display: none; padding: 2px 6px; font-size: 0.75rem;" onclick="openNewProjectPrompt()">+ Novo</button>
       </div>
 
       <ul class="project-list" id="project-list">
@@ -27,7 +40,7 @@
       </ul>
 
       <div style="margin: 12px 0 6px; display: flex; flex-direction: column; gap: 6px;">
-        <button class="btn" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 0.85rem;" onclick="openCollaboratorsModal()">
+        <button class="btn" id="sidebar-collaborators-btn" style="display: none; width: 100%; justify-content: flex-start; gap: 8px; font-size: 0.85rem;" onclick="openCollaboratorsModal()">
           👥 Colaboradores
         </button>
         <a href="/markdown-guide.html" class="btn" style="width: 100%; justify-content: flex-start; gap: 8px; font-size: 0.85rem; text-decoration: none;">
@@ -46,8 +59,9 @@
       <header class="board-header">
         <div id="project-header-info" style="display: none; align-items: center; gap: 12px;">
           <h1 class="board-title" id="current-project-title"></h1>
-          <button class="card-action-btn" id="rename-project-btn" title="Renomear Projeto" onclick="promptRenameCurrentProject()">✏️</button>
-          <button class="card-action-btn delete" id="delete-project-btn" title="Excluir Projeto" onclick="confirmDeleteCurrentProject()">🗑️</button>
+          <button class="btn" id="project-access-btn" style="display: none; padding: 3px 8px; font-size: 0.78rem;" title="Gerenciar Acesso ao Projeto" onclick="openProjectAccessModal()">👥 Acesso</button>
+          <button class="card-action-btn" id="rename-project-btn" style="display: none;" title="Renomear Projeto" onclick="promptRenameCurrentProject()">✏️</button>
+          <button class="card-action-btn delete" id="delete-project-btn" style="display: none;" title="Excluir Projeto" onclick="confirmDeleteCurrentProject()">🗑️</button>
         </div>
         <div class="board-actions" id="project-header-actions" style="display: none;">
           <button class="btn" onclick="openNewColumnModal()">+ Nova Lista</button>
@@ -215,6 +229,61 @@
       <div style="display: flex; justify-content: flex-end; gap: 8px;">
         <button type="button" class="btn" onclick="closeConfirmDeleteModal()">Cancelar</button>
         <button type="button" class="btn btn-primary" style="background: #dc2626; border-color: #b91c1c;" onclick="executeDeleteCurrentProject()">Excluir Definitivamente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Membros do Workspace -->
+  <div class="modal-overlay" id="workspace-members-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 id="ws-members-modal-title" style="font-size: 1.15rem;">👥 Membros do Workspace</h3>
+        <button class="btn" style="padding: 4px 10px;" onclick="closeWorkspaceMembersModal()">✕</button>
+      </div>
+
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px;">
+        Adicione usuários cadastrados e defina quem pode criar projetos neste workspace.
+      </p>
+
+      <div id="ws-members-add-row" style="display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 8px; margin-bottom: 14px;">
+        <select id="ws-member-user-select" class="form-control"></select>
+        <select id="ws-member-role-select" class="form-control">
+          <option value="member">Colaborador</option>
+          <option value="admin">Admin do WS</option>
+        </select>
+        <button type="button" class="btn btn-primary" onclick="addWorkspaceMemberRow()">+ Adicionar</button>
+      </div>
+
+      <div id="ws-members-list" style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+
+      <div id="ws-members-error" style="display: none; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-size: 0.82rem; margin-top: 10px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+        <button type="button" class="btn" onclick="closeWorkspaceMembersModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="saveWorkspaceMembersAction()">Salvar Membros</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Acesso ao Projeto -->
+  <div class="modal-overlay" id="project-access-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 440px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="project-access-modal-title" style="font-size: 1.15rem;">🔐 Acesso ao Projeto</h3>
+        <button class="btn" style="padding: 4px 10px;" onclick="closeProjectAccessModal()">✕</button>
+      </div>
+
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px;">
+        Selecione quais colaboradores do workspace podem visualizar e editar este projeto. Admins do workspace já têm acesso automático.
+      </p>
+
+      <div id="project-access-list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+
+      <div id="project-access-error" style="display: none; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-size: 0.82rem; margin-top: 10px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+        <button type="button" class="btn" onclick="closeProjectAccessModal()">Cancelar</button>
+        <button type="button" class="btn btn-primary" onclick="saveProjectAccessAction()">Salvar Acesso</button>
       </div>
     </div>
   </div>

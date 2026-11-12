@@ -118,6 +118,40 @@ body {
   margin: 12px 8px 6px;
 }
 
+.workspace-selector-box {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.workspace-select {
+  padding: 6px 8px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  background-color: #ffffff;
+}
+
+.access-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: #fbfbfa;
+  font-size: 0.86rem;
+}
+
+.access-role-badge {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eae9e5;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .project-list {
   list-style: none;
   flex: 1;

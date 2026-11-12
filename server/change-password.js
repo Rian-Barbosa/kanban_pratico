@@ -1,20 +1,19 @@
-import argon2 from 'argon2';
 import fs from 'fs';
 import { CONFIG } from './config.js';
+import { hashPassword, promptHiddenInput } from './auth.js';
 
-const newPassword = process.argv[2];
-
-if (!newPassword) {
-  console.log('\n❌ Uso: node server/change-password.js <nova_senha>\nExemplo: node server/change-password.js MinhaSenhaForte123\n');
-  process.exit(1);
-}
+let newPassword = process.argv[2];
 
 async function run() {
-  const hash = await argon2.hash(newPassword, {
-    type: argon2.argon2id,
-    memoryCost: 2 ** 16,
-    timeCost: 3
-  });
+  if (!newPassword) {
+    newPassword = await promptHiddenInput("Digite a nova senha para 'admin': ");
+    if (!newPassword) {
+      console.log('\n❌ A senha não pode ser vazia.\n');
+      process.exit(1);
+    }
+  }
+
+  const hash = await hashPassword(newPassword);
 
   const usersData = {
     users: [
@@ -31,4 +30,3 @@ async function run() {
 }
 
 run();
-

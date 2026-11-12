@@ -1,21 +1,25 @@
-import argon2 from 'argon2';
 import fs from 'fs';
 import { CONFIG } from './config.js';
+import { hashPassword, promptHiddenInput } from './auth.js';
 
 const username = process.argv[2];
-const password = process.argv[3];
+let password = process.argv[3];
 
-if (!username || !password) {
-  console.log('\n❌ Uso: node server/manage-users.js <usuario> <senha>\nExemplo: node server/manage-users.js joao MinhaSenhaForte123\n');
+if (!username) {
+  console.log('\n❌ Uso: node server/manage-users.js <usuario>\nExemplo: node server/manage-users.js joao\n(A senha será solicitada de forma oculta para não ficar no histórico do terminal)\n');
   process.exit(1);
 }
 
 async function run() {
-  const hash = await argon2.hash(password, {
-    type: argon2.argon2id,
-    memoryCost: 2 ** 16,
-    timeCost: 3
-  });
+  if (!password) {
+    password = await promptHiddenInput(`Digite a senha para '${username}': `);
+    if (!password) {
+      console.log('\n❌ A senha não pode ser vazia.\n');
+      process.exit(1);
+    }
+  }
+
+  const hash = await hashPassword(password);
 
   let usersData = { users: [] };
   if (fs.existsSync(CONFIG.USERS_FILE)) {
@@ -50,4 +54,3 @@ async function run() {
 }
 
 run();
-
